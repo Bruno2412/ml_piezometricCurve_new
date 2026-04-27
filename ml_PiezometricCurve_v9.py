@@ -3,8 +3,17 @@ from tkinter import ttk, messagebox, filedialog
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+<<<<<<< HEAD
 import matplotlib.dates as mdates
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+=======
+import tkinter as tk
+from tkinter import ttk, messagebox
+from tkinter.filedialog import askopenfilename
+from dateutil.relativedelta import relativedelta
+
+from statsmodels.tsa.arima.model import ARIMA
+>>>>>>> bfe4c0061e908dded20173f648fc739056429be3
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.stattools import adfuller
@@ -35,6 +44,7 @@ class Config:
     influence_area: float = 100.0 # Surface d'influence en m2
 
 
+<<<<<<< HEAD
 # ─── Helpers feature engineering ───────────────────────────────────────────────
 
 def make_features(dates: pd.Series) -> pd.DataFrame:
@@ -537,6 +547,17 @@ class App:
 
 
     # ── Analyse ─────────────────────────────────────────────────────────────────
+=======
+# --- Garder tes fonctions de calcul (inchangées pour la logique) ---
+# [create_features, model_rf, model_xgb, apply_hydro_model, calibrate_params, plot_result_v3 restent identiques]
+
+def create_features(series, lags):
+    df_y = pd.DataFrame(series.copy())
+    df_y.columns = ["y"]
+    lag_cols = [df_y["y"].shift(i).rename(f"lag_{i}") for i in range(1, lags + 1)]
+    df = pd.concat([df_y] + lag_cols, axis=1)
+    return df.dropna().astype(float)
+>>>>>>> bfe4c0061e908dded20173f648fc739056429be3
 
     def run_analysis(self):
             if self.df is None:
@@ -679,6 +700,7 @@ class App:
             m.fit(df_fit)
             pred, lo, hi = m.predict(future_dates)
 
+<<<<<<< HEAD
         else:
             raise ValueError(f'Modèle inconnu : {model_name}')
 
@@ -786,11 +808,242 @@ class App:
                         f.write(f'# {k},{v:.4f}\n')
             self.set_status('Export CSV terminé.', '#1a7a1a')
 
+=======
+def apply_hydro_model(prediction_series, storage, r_factor, r_mait, pumping, h_str, ppy, last_date):
+    adjusted = prediction_series.values.copy()
+    cumul = 0.0
+    s_val = storage if storage > 0 else 0.02
+    for i in range(len(adjusted)):
+        adjusted[i] += r_factor * np.sin(2 * np.pi * i / ppy)
+        if prediction_series.index[i] > last_date:
+            cumul += ((r_mait - pumping) / 12 / s_val) * h_str
+        adjusted[i] += cumul
+    return pd.Series(adjusted, index=prediction_series.index)
+
+
+def calibrate_params(levels):
+    std = np.std(levels)
+    return max(0.01, min(0.1, std / 10)), std / 20, 0.2
+
+
+def plot_result_v3(dates_hist, levels_hist, prediction_series, start_val_date, model_name, mape, erreur, mae):
+    plt.figure(figsize=(12, 6))
+    plt.plot(dates_hist, levels_hist, label="Observé (Historique)", color='#2c3e50', alpha=0.6, linewidth=1.5)
+    plt.fill_between(prediction_series.index, prediction_series - erreur, prediction_series + erreur, color='#e74c3c',
+                     alpha=0.15)
+    plt.plot(prediction_series.index, prediction_series, label=f"Prédiction {model_name}", color='#e74c3c',
+             linestyle='--', linewidth=2)
+    plt.axvspan(start_val_date, dates_hist.max(), color='gray', alpha=0.1)
+
+    color_box = '#27ae60' if mape <= 1 else '#f39c12' if mape <= 5 else '#c0392b'
+    stats_text = f"MAPE: {mape:.2f}%\nMAE: {mae:.2f} m\nIncertitude: ±{erreur:.2f} m"
+    plt.text(0.02, 0.95, stats_text, transform=plt.gca().transAxes, verticalalignment='top',
+             fontsize=10, fontweight='bold', color='white',
+             bbox=dict(facecolor=color_box, alpha=0.8, boxstyle='round,pad=0.5'))
+
+    plt.title(f"Expert Piézométrie : Analyse {model_name}", fontsize=14, pad=20)
+    plt.legend(loc='lower left')
+    plt.grid(True, linestyle=':', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+
+# --- ToolTip Class ---
+class ToolTip(object):
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tipwindow = None
+        self.widget.bind("<Enter>", self.show_tip)
+        self.widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event=None):
+        if self.tipwindow or not self.text: return
+        x, y, cx, cy = self.widget.bbox("insert")
+        x = x + self.widget.winfo_rootx() + 25
+        y = y + cy + self.widget.winfo_rooty() + 25
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry("+%d+%d" % (x, y))
+        label = tk.Label(tw, text=self.text, justify=tk.LEFT, background="#34495e", foreground="white",
+                         relief=tk.SOLID, borderwidth=1, font=("Arial", "9", "normal"), padx=8, pady=5)
+        label.pack(ipadx=1)
+
+    def hide_tip(self, event=None):
+        tw = self.tipwindow
+        self.tipwindow = None
+        if tw: tw.destroy()
+
+
+# --- GUI Améliorée ---
+class PiezometrieApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Expert Piézométrie v4.0")
+        self.root.geometry("500x650")
+        self.root.configure(bg="#f0f0f0")
+
+        # Style
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("TButton", font=("Helvetica", 10, "bold"), padding=6)
+        style.configure("Header.TLabel", font=("Helvetica", 12, "bold"), foreground="#2c3e50")
+
+        self.vars = {}
+        self.setup_ui()
+
+    def setup_ui(self):
+        # Header
+        header = ttk.Frame(self.root, padding=10)
+        header.pack(fill=tk.X)
+        ttk.Label(header, text="Analyse et Prédiction Piézométrique", style="Header.TLabel").pack()
+
+        # Onglets
+        nb = ttk.Notebook(self.root)
+        nb.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        tab1 = ttk.Frame(nb, padding=15)
+        tab2 = ttk.Frame(nb, padding=15)
+        nb.add(tab1, text="Paramètres Projets")
+        nb.add(tab2, text="Configuration Modèle")
+
+        # --- ONGLET 1 : PROJET ---
+        proj_frame = ttk.LabelFrame(tab1, text=" Simulation & Hydrogéologie ", padding=10)
+        proj_frame.pack(fill=tk.X, pady=5)
+
+        gen_f = [
+            ("Modèle", ["ARIMA", "ETS", "RandomForest", "XGBoost"]),
+            ("Années futur", "10"),
+            ("Années validation", "5"),
+            ("Recharge maîtrisée (m)", "0.5"),
+            ("Pompage (m)", "0.0")
+        ]
+
+        for i, (label, default) in enumerate(gen_f):
+            ttk.Label(proj_frame, text=label).grid(row=i, column=0, sticky=tk.W, pady=5)
+            var = tk.StringVar(value=default[0] if isinstance(default, list) else default)
+            if isinstance(default, list):
+                cb = ttk.Combobox(proj_frame, textvariable=var, values=default, state="readonly", width=18)
+                cb.grid(row=i, column=1, pady=5, sticky=tk.E)
+            else:
+                ttk.Entry(proj_frame, textvariable=var, width=20).grid(row=i, column=1, pady=5, sticky=tk.E)
+            self.vars[label] = var
+
+        # --- ONGLET 2 : CALIBRATION ---
+        cal_frame = ttk.LabelFrame(tab2, text=" Réglages Hyperparamètres ", padding=10)
+        cal_frame.pack(fill=tk.X, pady=5)
+
+        DESC = {
+            "Mémoire (Lags)": "Nb de mois passés analysés. Augmentez pour nappes lentes.",
+            "ARIMA (p,d,q)": "Format: p,d,q. Standard 1,1,1.",
+            "ML: Nb Arbres": "Stabilité de la forêt (Standard: 100).",
+            "ML: Profondeur Max": "Complexité. Réduisez (3-5) si sur-apprentissage.",
+            "Option ETS (1-4)": "1:Simple, 2:Tendance, 3:Saisonnier, 4:Complet"
+        }
+
+        cal_f = [
+            ("Mémoire (Lags)", "12"),
+            ("ARIMA (p,d,q)", "1,1,1"),
+            ("ML: Nb Arbres", "100"),
+            ("ML: Profondeur Max", "6"),
+            ("Option ETS (1-4)", "4")
+        ]
+
+        for i, (label, default) in enumerate(cal_f):
+            ttk.Label(cal_frame, text=label).grid(row=i, column=0, sticky=tk.W, pady=5)
+            var = tk.StringVar(value=default)
+            ttk.Entry(cal_frame, textvariable=var, width=15).grid(row=i, column=1, pady=5)
+
+            help_btn = ttk.Label(cal_frame, text="ⓘ", foreground="#3498db", cursor="hand2")
+            help_btn.grid(row=i, column=2, padx=5)
+            ToolTip(help_btn, DESC[label])
+            self.vars[label] = var
+
+        # --- BAS DE FENÊTRE ---
+        footer = ttk.Frame(self.root, padding=20)
+        footer.pack(fill=tk.X)
+
+        self.btn_run = ttk.Button(footer, text="CHARGER DONNÉES & LANCER", command=self.execute)
+        self.btn_run.pack(fill=tk.X)
+
+        self.progress = ttk.Progressbar(footer, mode='indeterminate')
+        self.progress.pack(fill=tk.X, pady=10)
+
+        self.log_label = ttk.Label(footer, text="Prêt", font=("Consolas", 9), foreground="gray")
+        self.log_label.pack()
+
+    def log(self, text):
+        self.log_label.config(text=text)
+        self.root.update_idletasks()
+
+    def execute(self):
+        self.progress.start()
+        self.log("Traitement en cours...")
+        # On appelle ta fonction run_model (adaptée ici pour la classe)
+        try:
+            run_model(self.vars, self.root)
+            self.log("Analyse terminée avec succès.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Une erreur est survenue : {e}")
+            self.log("Erreur lors de l'exécution.")
+        finally:
+            self.progress.stop()
+
+
+# --- Adaptation de run_model pour fonctionner avec la nouvelle GUI ---
+def run_model(vars, root):
+    # La logique de calcul reste exactement la même que ton code original
+    try:
+        y_fut, y_val = int(vars["Années futur"].get()), int(vars["Années validation"].get())
+        r_mait, pump = float(vars["Recharge maîtrisée (m)"].get()), float(vars["Pompage (m)"].get())
+        mod, ets_opt = vars["Modèle"].get(), vars["Option ETS (1-4)"].get()
+        lag = int(vars["Mémoire (Lags)"].get())
+        order = tuple(map(int, vars["ARIMA (p,d,q)"].get().split(',')))
+        n_est, m_dep = int(vars["ML: Nb Arbres"].get()), int(vars["ML: Profondeur Max"].get())
+        m_depth = m_dep if m_dep > 0 else None
+    except Exception as e:
+        raise ValueError(f"Données saisies incorrectes : {e}")
+
+    file_path = askopenfilename(filetypes=[("Excel", "*.xlsx")])
+    if not file_path: return
+
+    df = pd.read_excel(file_path)
+    df_clean = pd.DataFrame(
+        {'date': pd.to_datetime(df.iloc[:, 4]), 'level': df.iloc[:, 6].astype(float)}).sort_values(
+        'date').set_index('date')
+
+    last_date = df_clean.index.max()
+    start_val = last_date - relativedelta(years=y_val)
+    train = df_clean[df_clean.index < start_val]['level']
+    steps = int((y_val + y_fut) * 12)
+    storage, r_fact, h_str = calibrate_params(df_clean['level'])
+
+    if mod == "ARIMA":
+        raw = ARIMA(train.values, order=order).fit().forecast(steps)
+    elif mod == "ETS":
+        raw = ExponentialSmoothing(train.values, trend=('add' if ets_opt != '1' else None), seasonal='add',
+                                   seasonal_periods=12).fit().forecast(steps)
+    elif mod == "RandomForest":
+        raw = model_rf(train, steps, lag, n_est, m_depth)
+    else:
+        raw = model_xgb(train, steps, lag, n_est, m_depth)
+
+    dates = pd.date_range(start=start_val + pd.DateOffset(months=1), periods=steps, freq='MS')
+    prediction = apply_hydro_model(pd.Series(raw, index=dates), storage, r_fact, r_mait, pump, h_str, 12, last_date)
+
+    comp = pd.DataFrame({'obs': df_clean['level'], 'pre': prediction}).dropna()
+    mape = np.mean(np.abs((comp['obs'] - comp['pre']) / comp['obs'])) * 100 if not comp.empty else 0
+    mae = np.mean(np.abs(comp['obs'] - comp['pre'])) if not comp.empty else 0
+    std = np.nanstd(comp['obs'] - comp['pre']) if not comp.empty else 0
+
+    plot_result_v3(df_clean.index, df_clean['level'], prediction, start_val, mod, mape, std, mae)
+>>>>>>> bfe4c0061e908dded20173f648fc739056429be3
 
 # ─── Point d'entrée ────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     root = tk.Tk()
+<<<<<<< HEAD
     # Optionnel : Appliquer un style global plus moderne
     style = ttk.Style()
     if 'arc' in style.theme_names():
@@ -798,3 +1051,7 @@ if __name__ == '__main__':
         
     app = App(root)
     root.mainloop()
+=======
+    app = PiezometrieApp(root)
+    root.mainloop()gi
+>>>>>>> bfe4c0061e908dded20173f648fc739056429be3
