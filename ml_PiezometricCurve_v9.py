@@ -375,11 +375,11 @@ class App:
                              '3 - Saisonnier', '4 - Complet'],
                      state='readonly').pack(fill='x', padx=8, pady=4)
 
-        self.future_var = tk.IntVar(value=10)
+        self.future_var = tk.IntVar(value=5)
         ttk.Label(params, text='Années futures').pack(anchor='w', padx=8)
         ttk.Entry(params, textvariable=self.future_var).pack(fill='x', padx=8, pady=4)
 
-        self.val_var = tk.IntVar(value=5)
+        self.val_var = tk.IntVar(value=20)
         ttk.Label(params, text='Années validation').pack(anchor='w', padx=8)
         ttk.Entry(params, textvariable=self.val_var).pack(fill='x', padx=8, pady=4)
 
