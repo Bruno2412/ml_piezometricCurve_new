@@ -1,19 +1,15 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+from tkinter.filedialog import askopenfilename
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-<<<<<<< HEAD
 import matplotlib.dates as mdates
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-=======
-import tkinter as tk
-from tkinter import ttk, messagebox
-from tkinter.filedialog import askopenfilename
 from dateutil.relativedelta import relativedelta
+from scipy.special import exp1
 
 from statsmodels.tsa.arima.model import ARIMA
->>>>>>> bfe4c0061e908dded20173f648fc739056429be3
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.stattools import adfuller
@@ -21,62 +17,54 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import warnings
 warnings.filterwarnings('ignore')
 
 APP_TITLE = 'Expert Piézométrie Pro'
-APP_SIZE = '1250x820'
+APP_SIZE  = '1250x820'
+
 
 # ─── Config ────────────────────────────────────────────────────────────────────
 
 @dataclass
 class Config:
-    file_path: str = ''
-    model: str = 'ETS'
-    ets_type: str = '3'
-    future_years: int = 5
-    validation_years: int = 20
-    ci_level: float = 0.05
-    n_bootstraps: int = 200
-    recharge_factor: float = 0.0  # Deviendra notre débit (m3/j)
-    storage_coeff: float = 0.05   # Valeur par défaut pour une nappe libre
-    influence_area: float = 100.0 # Surface d'influence en m2
+    file_path:        str   = ''
+    model:            str   = 'ETS'
+    ets_type:         str   = '3'
+    future_years:     int   = 5
+    validation_years: int   = 20
+    ci_level:         float = 0.05
+    n_bootstraps:     int   = 200
+    recharge_factor:  float = 0.0
+    storage_coeff:    float = 0.05
+    influence_area:   float = 100.0
 
 
-<<<<<<< HEAD
 # ─── Helpers feature engineering ───────────────────────────────────────────────
 
 def make_features(dates: pd.Series) -> pd.DataFrame:
-    """Crée des features temporelles pour RF / XGBoost."""
-    df = pd.DataFrame({'date': dates})
-    df['t'] = (df['date'] - df['date'].min()).dt.days
-    df['month'] = df['date'].dt.month
+    df = pd.DataFrame({'date': pd.to_datetime(dates)})
+    df['t']         = (df['date'] - df['date'].min()).dt.days
+    df['month']     = df['date'].dt.month
     df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
     df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
-    df['year'] = df['date'].dt.year
-    df['quarter'] = df['date'].dt.quarter
+    df['year']      = df['date'].dt.year
+    df['quarter']   = df['date'].dt.quarter
     return df.drop(columns=['date'])
 
 
 def detect_frequency(dates: pd.Series) -> str:
-    """Détecte automatiquement la fréquence dominante des données."""
     diffs = dates.diff().dropna().dt.days
     median_diff = diffs.median()
-    if median_diff <= 1.5:
-        return 'D'
-    elif median_diff <= 8:
-        return 'W'
-    elif median_diff <= 35:
-        return 'MS'
-    elif median_diff <= 100:
-        return 'QS'
-    else:
-        return 'YS'
+    if median_diff <= 1.5:   return 'D'
+    elif median_diff <= 8:   return 'W'
+    elif median_diff <= 35:  return 'MS'
+    elif median_diff <= 100: return 'QS'
+    else:                    return 'YS'
 
 
 def freq_to_seasonal_periods(freq: str) -> int:
-    # Pour les nappes, la saisonnalité est toujours annuelle (365 jours ou 12 mois)
     return {'D': 365, 'W': 52, 'MS': 12, 'QS': 4, 'YS': 1}.get(freq, 12)
 
 
@@ -85,17 +73,111 @@ def future_steps(freq: str, years: int) -> int:
             'QS': years * 4, 'YS': years}.get(freq, years * 12)
 
 
+def create_features(series, lags):
+    """Features ML avec décalages temporels."""
+    df_y = pd.DataFrame(series.copy())
+    df_y.columns = ['y']
+    lag_cols = [df_y['y'].shift(i).rename(f'lag_{i}') for i in range(1, lags + 1)]
+    df = pd.concat([df_y] + lag_cols, axis=1)
+    return df.dropna().astype(float)
+
+
+def calibrate_params(levels):
+    std = np.std(levels)
+    return max(0.01, min(0.1, std / 10)), std / 20, 0.2
+
+
+def apply_hydro_model(prediction_series, storage, r_factor, r_mait, pumping,
+                      h_str, ppy, last_date):
+    adjusted = prediction_series.values.copy()
+    cumul    = 0.0
+    s_val    = storage if storage > 0 else 0.02
+    for i in range(len(adjusted)):
+        adjusted[i] += r_factor * np.sin(2 * np.pi * i / ppy)
+        if prediction_series.index[i] > last_date:
+            cumul += ((r_mait - pumping) / 12 / s_val) * h_str
+        adjusted[i] += cumul
+    return pd.Series(adjusted, index=prediction_series.index)
+
+
+def model_rf(train: pd.Series, steps: int, lag: int,
+             n_est: int, m_depth) -> np.ndarray:
+    """RandomForest sur séries temporelles via features lag."""
+    df = create_features(train, lag)
+    X, y = df.drop(columns=['y']).values, df['y'].values
+    rf = RandomForestRegressor(n_estimators=n_est, max_depth=m_depth,
+                               random_state=42, n_jobs=-1)
+    rf.fit(X, y)
+
+    history = list(train.values[-lag:])
+    preds   = []
+    for _ in range(steps):
+        x   = np.array(history[-lag:][::-1]).reshape(1, -1)
+        val = rf.predict(x)[0]
+        preds.append(val)
+        history.append(val)
+    return np.array(preds)
+
+
+def model_xgb(train: pd.Series, steps: int, lag: int,
+              n_est: int, m_depth) -> np.ndarray:
+    """GradientBoosting (proxy XGBoost) sur séries temporelles."""
+    df = create_features(train, lag)
+    X, y = df.drop(columns=['y']).values, df['y'].values
+    gb = GradientBoostingRegressor(n_estimators=n_est, max_depth=m_depth or 4,
+                                   learning_rate=0.05, subsample=0.8,
+                                   random_state=42)
+    gb.fit(X, y)
+
+    history = list(train.values[-lag:])
+    preds   = []
+    for _ in range(steps):
+        x   = np.array(history[-lag:][::-1]).reshape(1, -1)
+        val = gb.predict(x)[0]
+        preds.append(val)
+        history.append(val)
+    return np.array(preds)
+
+
+def plot_result_v3(dates_hist, levels_hist, prediction_series,
+                   start_val_date, model_name, mape, erreur, mae):
+    plt.figure(figsize=(12, 6))
+    plt.plot(dates_hist, levels_hist, label='Observé (Historique)',
+             color='#2c3e50', alpha=0.6, linewidth=1.5)
+    plt.fill_between(prediction_series.index,
+                     prediction_series - erreur,
+                     prediction_series + erreur,
+                     color='#e74c3c', alpha=0.15)
+    plt.plot(prediction_series.index, prediction_series,
+             label=f'Prédiction {model_name}', color='#e74c3c',
+             linestyle='--', linewidth=2)
+    plt.axvspan(start_val_date, dates_hist.max(), color='gray', alpha=0.1)
+
+    color_box  = '#27ae60' if mape <= 1 else '#f39c12' if mape <= 5 else '#c0392b'
+    stats_text = f'MAPE: {mape:.2f}%\nMAE: {mae:.2f} m\nIncertitude: ±{erreur:.2f} m'
+    plt.text(0.02, 0.95, stats_text, transform=plt.gca().transAxes,
+             verticalalignment='top', fontsize=10, fontweight='bold',
+             color='white',
+             bbox=dict(facecolor=color_box, alpha=0.8, boxstyle='round,pad=0.5'))
+
+    plt.title(f'Expert Piézométrie : Analyse {model_name}', fontsize=14, pad=20)
+    plt.legend(loc='lower left')
+    plt.grid(True, linestyle=':', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+
 # ─── Modèles ───────────────────────────────────────────────────────────────────
 
 class ETSModel:
     def __init__(self, ets_type: str, seasonal_periods: int, ci_level: float):
         self.ets_type = ets_type
-        self.sp = seasonal_periods
+        self.sp       = seasonal_periods
         self.ci_level = ci_level
-        self.fit_ = None
+        self.fit_     = None
 
     def fit(self, y: np.ndarray):
-        t = self.ets_type
+        t  = self.ets_type
         sp = self.sp if self.sp > 1 else None
         if t == '1':
             m = ExponentialSmoothing(y, trend=None, seasonal=None)
@@ -113,26 +195,15 @@ class ETSModel:
         return self
 
     def predict(self, steps: int):
-            # Augmenter les répétitions pour stabiliser l'IC
-            sim = self.fit_.simulate(steps, repetitions=1000, error='add')
-            pred = self.fit_.forecast(steps)
-            
-            # Astuce : On utilise l'écart-type des résidus pour un IC plus "serré" 
-            # si la simulation est trop erratique
-            alpha = self.ci_level
-            
-            # Calcul par quantiles (ton code actuel)
-            lo = np.quantile(sim, alpha / 2, axis=1)
-            hi = np.quantile(sim, 1 - alpha / 2, axis=1)
-            
-            return pred, lo, hi
+        sim  = self.fit_.simulate(steps, repetitions=1000, error='add')
+        pred = self.fit_.forecast(steps)
+        alpha = self.ci_level
+        lo   = np.quantile(sim, alpha / 2,       axis=1)
+        hi   = np.quantile(sim, 1 - alpha / 2,   axis=1)
+        return pred, lo, hi
 
 
 class ARIMAModel:
-    """
-    SARIMA automatique : teste quelques combinaisons (p,d,q) et garde le
-    meilleur AIC. Intervalles de confiance analytiques via statsmodels.
-    """
     CANDIDATES = [
         (1, 1, 1), (1, 1, 0), (0, 1, 1),
         (2, 1, 1), (1, 1, 2), (2, 1, 2),
@@ -140,10 +211,10 @@ class ARIMAModel:
     ]
 
     def __init__(self, seasonal_periods: int, ci_level: float):
-        self.sp = seasonal_periods
+        self.sp       = seasonal_periods
         self.ci_level = ci_level
-        self.res_ = None
-        self.order_ = None
+        self.res_     = None
+        self.order_   = None
 
     def _is_stationary(self, y):
         try:
@@ -152,12 +223,11 @@ class ARIMAModel:
             return False
 
     def fit(self, y: np.ndarray):
-        d = 0 if self._is_stationary(y) else 1
+        d  = 0 if self._is_stationary(y) else 1
         sp = self.sp if self.sp > 1 else 0
 
         best_aic = np.inf
         best_res = None
-        best_order = (1, d, 1)
 
         for p, _, q in self.CANDIDATES:
             try:
@@ -174,37 +244,32 @@ class ARIMAModel:
                 if res.aic < best_aic:
                     best_aic = res.aic
                     best_res = res
-                    best_order = (p, d, q)
+                    self.order_ = (p, d, q)
             except Exception:
                 continue
 
         if best_res is None:
             raise RuntimeError("ARIMA : impossible d'ajuster le modèle.")
         self.res_ = best_res
-        self.order_ = best_order
         return self
 
     def predict(self, steps: int):
-        fc = self.res_.get_forecast(steps=steps)
+        fc  = self.res_.get_forecast(steps=steps)
         pred = fc.predicted_mean
-        ci = fc.conf_int(alpha=self.ci_level)   # FIX : ci_level est déjà alpha
-        lo = ci.iloc[:, 0].values
-        hi = ci.iloc[:, 1].values
+        ci   = fc.conf_int(alpha=self.ci_level)
+        lo   = ci.iloc[:, 0].values
+        hi   = ci.iloc[:, 1].values
         return pred, lo, hi
 
 
 class SklearnModel:
-    """
-    RandomForest ou XGBoost/GradientBoosting avec intervalles de confiance
-    par bootstrap (quantile regression).
-    """
     def __init__(self, kind: str, ci_level: float, n_bootstraps: int):
-        self.kind = kind          # 'RandomForest' ou 'XGBoost'
-        self.ci_level = ci_level
+        self.kind        = kind
+        self.ci_level    = ci_level
         self.n_bootstraps = n_bootstraps
-        self.models_ = []
-        self.scaler_ = StandardScaler()
-        self.train_dates_ = None
+        self.models_     = []
+        self.scaler_     = StandardScaler()
+        self.train_origin_ = None
 
     def _make_model(self):
         if self.kind == 'RandomForest':
@@ -216,39 +281,32 @@ class SklearnModel:
                                              subsample=0.8, random_state=42)
 
     def fit(self, df: pd.DataFrame):
-        """df doit contenir 'date' et 'level'."""
-        self.train_dates_ = df['date'].copy()
-        self.train_origin_ = df['date'].min()   # FIX : mémoriser l'origine pour predict
+        self.train_origin_ = df['date'].min()
         X = make_features(df['date'])
         y = df['level'].values
         X_scaled = self.scaler_.fit_transform(X)
-
-        # Bootstrap
         n = len(y)
         for _ in range(self.n_bootstraps):
             idx = np.random.choice(n, n, replace=True)
-            m = self._make_model()
+            m   = self._make_model()
             m.fit(X_scaled[idx], y[idx])
             self.models_.append(m)
         return self
 
     def predict(self, future_dates: pd.Series):
-        # FIX : reconstruire les features avec la même origine que l'entraînement
         df_feat = pd.DataFrame({'date': pd.to_datetime(future_dates)})
-        df_feat['t'] = (df_feat['date'] - self.train_origin_).dt.days
-        df_feat['month'] = df_feat['date'].dt.month
+        df_feat['t']         = (df_feat['date'] - self.train_origin_).dt.days
+        df_feat['month']     = df_feat['date'].dt.month
         df_feat['month_sin'] = np.sin(2 * np.pi * df_feat['month'] / 12)
         df_feat['month_cos'] = np.cos(2 * np.pi * df_feat['month'] / 12)
-        df_feat['year'] = df_feat['date'].dt.year
-        df_feat['quarter'] = df_feat['date'].dt.quarter
-        X_fut = df_feat.drop(columns=['date'])
-
+        df_feat['year']      = df_feat['date'].dt.year
+        df_feat['quarter']   = df_feat['date'].dt.quarter
+        X_fut    = df_feat.drop(columns=['date'])
         X_scaled = self.scaler_.transform(X_fut)
-        preds = np.array([m.predict(X_scaled) for m in self.models_])
-        pred = preds.mean(axis=0)
-        alpha = self.ci_level          # FIX : cohérence avec les autres modèles
-        lo = np.quantile(preds, alpha / 2, axis=0)
-        hi = np.quantile(preds, 1 - alpha / 2, axis=0)
+        preds    = np.array([m.predict(X_scaled) for m in self.models_])
+        pred     = preds.mean(axis=0)
+        lo       = np.quantile(preds, self.ci_level / 2,       axis=0)
+        hi       = np.quantile(preds, 1 - self.ci_level / 2,   axis=0)
         return pred, lo, hi
 
 
@@ -256,15 +314,15 @@ class SklearnModel:
 
 class App:
     def __init__(self, root):
-        self.root = root
+        self.root     = root
         self.root.title(APP_TITLE)
         self.root.geometry(APP_SIZE)
         self.root.minsize(1050, 720)
-        self.df = None
-        self.pred_df = None
-        self.cfg = Config()
-        self.freq = 'MS'
-        self.metrics = {}
+        self.df       = None
+        self.pred_df  = None
+        self.cfg      = Config()
+        self.freq     = 'MS'
+        self.metrics  = {}
         self.build_ui()
 
     # ── UI ──────────────────────────────────────────────────────────────────────
@@ -283,7 +341,6 @@ class App:
         main.columnconfigure(0, weight=1)
         self.main = main
 
-        # ── Sidebar header
         tk.Label(sidebar, text='Expert Piézométrie Pro',
                  fg='white', bg='#1f2d3d',
                  font=('Segoe UI', 14, 'bold')).pack(pady=18)
@@ -300,37 +357,6 @@ class App:
         # ── Paramètres modèle
         params = ttk.LabelFrame(sidebar, text='Paramètres modèle')
         params.pack(fill='x', padx=10, pady=6)
-
-        # ── Simulation Recharge Maîtrisée (CORRIGÉ AVEC DIMENSION SPATIALE)
-        recharge_frame = ttk.LabelFrame(sidebar, text='Injection Maîtrisée')
-        recharge_frame.pack(fill='x', padx=10, pady=6)
-
-        # 1. Débit d'injection
-        self.recharge_var = tk.DoubleVar(value=0.0)
-        ttk.Label(recharge_frame, text="Débit injecté (m³/jour)").pack(anchor='w', padx=8, pady=(5,0))
-        ttk.Entry(recharge_frame, textvariable=self.recharge_var).pack(fill='x', padx=8, pady=2)
-
-        # 2. Coefficient d'emmagasinement (S)
-        self.s_coeff_var = tk.DoubleVar(value=0.05)
-        ttk.Label(recharge_frame, text="Coeff. Emmagasinement (S)").pack(anchor='w', padx=8, pady=(5,0))
-        ttk.Entry(recharge_frame, textvariable=self.s_coeff_var).pack(fill='x', padx=8, pady=2)
-
-        # 3. Surface de l'ouvrage (m²)
-        self.area_var = tk.DoubleVar(value=100.0)
-        ttk.Label(recharge_frame, text="Surface de l'ouvrage (m²)").pack(anchor='w', padx=8, pady=(5,0))
-        ttk.Entry(recharge_frame, textvariable=self.area_var).pack(fill='x', padx=8, pady=2)
-
-        # 4. DISTANCE (Champ spatial 1)
-        self.dist_var = tk.DoubleVar(value=50.0)
-        ttk.Label(recharge_frame, text="Distance piézo/ouvrage (m)").pack(anchor='w', padx=8, pady=(5,0))
-        ttk.Entry(recharge_frame, textvariable=self.dist_var).pack(fill='x', padx=8, pady=2)
-
-        # 5. PERMÉABILITÉ K (Champ spatial 2)
-        self.k_var = tk.DoubleVar(value=0.0001)
-        ttk.Label(recharge_frame, text="Perméabilité K (m/s)").pack(anchor='w', padx=8, pady=(5,0))
-        ttk.Entry(recharge_frame, textvariable=self.k_var).pack(fill='x', padx=8, pady=(2,10))
-
-        # --- Fin du bloc Recharge ---
 
         self.model_var = tk.StringVar(value='ETS')
         ttk.Label(params, text='Modèle').pack(anchor='w', padx=8, pady=(8, 0))
@@ -357,7 +383,31 @@ class App:
         ttk.Label(params, text='Années validation').pack(anchor='w', padx=8)
         ttk.Entry(params, textvariable=self.val_var).pack(fill='x', padx=8, pady=4)
 
-        # ── Paramètres intervalles de confiance
+        # ── Injection Maîtrisée
+        recharge_frame = ttk.LabelFrame(sidebar, text='Injection Maîtrisée')
+        recharge_frame.pack(fill='x', padx=10, pady=6)
+
+        self.recharge_var = tk.DoubleVar(value=0.0)
+        ttk.Label(recharge_frame, text='Débit injecté (m³/jour)').pack(anchor='w', padx=8, pady=(5, 0))
+        ttk.Entry(recharge_frame, textvariable=self.recharge_var).pack(fill='x', padx=8, pady=2)
+
+        self.s_coeff_var = tk.DoubleVar(value=0.05)
+        ttk.Label(recharge_frame, text='Coeff. Emmagasinement (S)').pack(anchor='w', padx=8, pady=(5, 0))
+        ttk.Entry(recharge_frame, textvariable=self.s_coeff_var).pack(fill='x', padx=8, pady=2)
+
+        self.area_var = tk.DoubleVar(value=100.0)
+        ttk.Label(recharge_frame, text="Surface de l'ouvrage (m²)").pack(anchor='w', padx=8, pady=(5, 0))
+        ttk.Entry(recharge_frame, textvariable=self.area_var).pack(fill='x', padx=8, pady=2)
+
+        self.dist_var = tk.DoubleVar(value=50.0)
+        ttk.Label(recharge_frame, text='Distance piézo/ouvrage (m)').pack(anchor='w', padx=8, pady=(5, 0))
+        ttk.Entry(recharge_frame, textvariable=self.dist_var).pack(fill='x', padx=8, pady=2)
+
+        self.k_var = tk.DoubleVar(value=0.0001)
+        ttk.Label(recharge_frame, text='Perméabilité K (m/s)').pack(anchor='w', padx=8, pady=(5, 0))
+        ttk.Entry(recharge_frame, textvariable=self.k_var).pack(fill='x', padx=8, pady=(2, 10))
+
+        # ── Intervalle de confiance
         ci_frame = ttk.LabelFrame(sidebar, text='Intervalle de confiance')
         ci_frame.pack(fill='x', padx=10, pady=6)
 
@@ -403,9 +453,9 @@ class App:
 
         self.table = ttk.Treeview(self.content,
                                   columns=('date', 'level'), show='headings')
-        self.table.heading('date', text='Date')
+        self.table.heading('date',  text='Date')
         self.table.heading('level', text='Niveau (m)')
-        self.table.column('date', width=160)
+        self.table.column('date',  width=160)
         self.table.column('level', width=120)
         self.table.grid(row=0, column=0, sticky='nswe')
 
@@ -426,7 +476,6 @@ class App:
 
     # ── Chargement ──────────────────────────────────────────────────────────────
 
-    # Noms de colonnes BSS reconnus automatiquement
     DATE_ALIASES = [
         'date de la mesure', 'date_mesure', 'date mesure', 'date',
         'datetime', 'horodatage', 'timestamp',
@@ -438,7 +487,6 @@ class App:
     ]
 
     def _find_column(self, df: pd.DataFrame, aliases: list):
-        """Retourne le nom de colonne correspondant à l'un des alias (insensible à la casse)."""
         cols_lower = {c.lower().strip(): c for c in df.columns}
         for alias in aliases:
             if alias in cols_lower:
@@ -456,24 +504,23 @@ class App:
                 raise ValueError(
                     'Le fichier doit contenir au moins 2 colonnes : date / niveau')
 
-            # ── Détection automatique des colonnes date et niveau
-            date_col = self._find_column(df, self.DATE_ALIASES)
+            date_col  = self._find_column(df, self.DATE_ALIASES)
             level_col = self._find_column(df, self.LEVEL_ALIASES)
 
             if date_col is None or level_col is None:
                 available = list(df.columns)
                 msg = (
-                    f"Colonnes détectées : {available}\n\n"
+                    f'Colonnes détectées : {available}\n\n'
                     f"Colonne date trouvée : {date_col or '❌ NON TROUVÉE'}\n"
                     f"Colonne niveau trouvée : {level_col or '❌ NON TROUVÉE'}\n\n"
                     "Renommez les colonnes en 'date' et 'level' dans votre fichier "
-                    "ou vérifiez que les noms correspondent aux colonnes BSS standard."
+                    'ou vérifiez que les noms correspondent aux colonnes BSS standard.'
                 )
                 raise ValueError(msg)
 
             df = df[[date_col, level_col]].copy()
             df.columns = ['date', 'level']
-            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+            df['date']  = pd.to_datetime(df['date'],  errors='coerce')
             df['level'] = pd.to_numeric(df['level'], errors='coerce')
             df = df.dropna().sort_values('date').reset_index(drop=True)
 
@@ -487,7 +534,6 @@ class App:
             self.df = df
             self.cfg.file_path = path
 
-            # Détection fréquence
             self.freq = detect_frequency(df['date'])
             freq_names = {'D': 'Journalier', 'W': 'Hebdomadaire',
                           'MS': 'Mensuel', 'QS': 'Trimestriel', 'YS': 'Annuel'}
@@ -506,183 +552,136 @@ class App:
         n = len(df)
         if n > 500:
             self.set_status(
-                f'Aperçu limité à 500 lignes sur {n} — toutes les données'
-                f' sont utilisées pour l\'analyse.', '#a07000')
+                f"Aperçu limité à 500 lignes sur {n} — toutes les données"
+                f" sont utilisées pour l'analyse.", '#a07000')
         for _, row in df.head(500).iterrows():
             self.table.insert('', 'end',
                               values=(row['date'].date(),
                                       f"{row['level']:.3f}"))
 
-    def calculate_spatial_impact(self, Q, S, K, distance, time_days, Area):
-            """
-            Calcule la remontée (m) à une distance R après un temps T.
-            Modèle simplifié de dôme piézométrique.
-            """
-            if time_days <= 0 or S <= 0 or K <= 0:
-                return 0
-            
-            # Rayon équivalent du bassin (si Area est la surface du bassin)
-            R_bassin = np.sqrt(Area / np.pi)
-            
-            # Transmissivité estimée (K * épaisseur moyenne, ici fixée à 10m par défaut)
-            T = K * 10 
-            
-            # Diffusivité hydraulique
-            diffusivity = T / S
-            
-            # Calcul de la remontée à la distance r (Approximation de Hantush)
-            # On utilise une décroissance logarithmique en fonction de la distance
-            if distance <= R_bassin:
-                # Sous le bassin, la remontée est maximale
-                impact = (Q / (Area * S)) * (1 - np.exp(-time_days / 10)) # Stabilisation théorique
-            else:
-                # À l'extérieur, l'impact décroît avec la distance
-                u = (distance**2 * S) / (4 * T * time_days)
-                if u > 5: return 0 # Impact négligeable
-                # Approximation de la fonction de puits (Theis inversé pour injection)
-                from scipy.special import exp1
-                impact = (Q / (4 * np.pi * T)) * exp1(u)
-                
-            return max(0, impact)
+    # ── Impact spatial ──────────────────────────────────────────────────────────
 
+    def calculate_spatial_impact(self, Q, S, K, distance, time_days, Area):
+        if time_days <= 0 or S <= 0 or K <= 0:
+            return 0
+        R_bassin    = np.sqrt(Area / np.pi)
+        T           = K * 10                   # Transmissivité (épaisseur fixée 10 m)
+        if distance <= R_bassin:
+            impact = (Q / (Area * S)) * (1 - np.exp(-time_days / 10))
+        else:
+            u = (distance ** 2 * S) / (4 * T * time_days)
+            if u > 5:
+                return 0
+            impact = (Q / (4 * np.pi * T)) * exp1(u)
+        return max(0, impact)
 
     # ── Analyse ─────────────────────────────────────────────────────────────────
-=======
-# --- Garder tes fonctions de calcul (inchangées pour la logique) ---
-# [create_features, model_rf, model_xgb, apply_hydro_model, calibrate_params, plot_result_v3 restent identiques]
-
-def create_features(series, lags):
-    df_y = pd.DataFrame(series.copy())
-    df_y.columns = ["y"]
-    lag_cols = [df_y["y"].shift(i).rename(f"lag_{i}") for i in range(1, lags + 1)]
-    df = pd.concat([df_y] + lag_cols, axis=1)
-    return df.dropna().astype(float)
->>>>>>> bfe4c0061e908dded20173f648fc739056429be3
 
     def run_analysis(self):
-            if self.df is None:
-                messagebox.showwarning('Attention', 'Chargez d\'abord un fichier Excel.')
-                return
-            try:
-                # ── 1. Lecture et validation des paramètres UI
-                self.cfg.future_years = int(self.future_var.get())
-                self.cfg.validation_years = int(self.val_var.get())
-                self.cfg.model = self.model_var.get()
-                
-                # Paramètres de recharge maîtrisée
-                Q = float(self.recharge_var.get())     # m3/jour
-                S = float(self.s_coeff_var.get())      # Coefficient emmagasinement
-                Area = float(self.area_var.get())      # Surface m2
-    
-                # Validation du niveau de confiance
-                ci_pct = float(self.ci_var.get())
-                if not (50.0 < ci_pct < 100.0):
-                    raise ValueError('Le niveau de confiance doit être entre 50 et 100 %.')
-                self.cfg.ci_level = (100.0 - ci_pct) / 100.0
-    
-                self.cfg.n_bootstraps = int(self.boot_var.get())
-                
-                # Type ETS
-                ets_raw = self.ets_var.get()
-                self.cfg.ets_type = ets_raw[0]
-    
-                self.set_status('Calcul en cours…', '#a07000')
-    
-                # ── 2. Split validation
-                v_steps = min(
-                    future_steps(self.freq, self.cfg.validation_years),
-                    len(self.df) // 4
-                )
-                if v_steps < 1:
-                    raise ValueError('Pas assez de données pour la période de validation.')
-    
-                df_train = self.df.iloc[:-v_steps].copy()
-                df_val   = self.df.iloc[-v_steps:].copy()
-    
-                # ── 3. Fit & Predict — validation (sans injection sur le passé)
-                p_val, lo_v, hi_v = self._fit_predict(df_train, v_steps, df_val['date'])
-    
-                # Métriques
-                y_true = df_val['level'].values
-                mae  = mean_absolute_error(y_true, p_val)
-                rmse = np.sqrt(mean_squared_error(y_true, p_val))
-                nonzero = y_true != 0
-                mape = (np.mean(np.abs((y_true[nonzero] - p_val[nonzero]) / y_true[nonzero])) * 100 
-                        if nonzero.any() else float('nan'))
-    
-                self.metrics = {'MAE': mae, 'RMSE': rmse, 'MAPE': mape}
-                self.metrics_labels['MAE'].config(text=f'{mae:.4f} m')
-                self.metrics_labels['RMSE'].config(text=f'{rmse:.4f} m')
-                self.metrics_labels['MAPE'].config(text=f'{mape:.2f} %' if not np.isnan(mape) else 'N/A')
-    
-                # ── 4. Fit Final & Prévision future
-                fut_s = future_steps(self.freq, self.cfg.future_years)
-                fut_dates = pd.date_range(
-                    self.df['date'].max(), periods=fut_s + 1, freq=self.freq)[1:]
-    
-                p_fut, lo_f, hi_f = self._fit_predict(self.df, fut_s, pd.Series(fut_dates))
-    
-                # ── 5. CALCUL DE L'IMPACT SPATIAL CUMULÉ
-                Q = float(self.recharge_var.get())
-                S = float(self.s_coeff_var.get())
-                Area = float(self.area_var.get())
-                K = float(self.k_var.get())
-                dist = float(self.dist_var.get())
-                
-                # On calcule l'impact pour chaque pas de temps futur
-                impact_spatial = []
-                days_per_step = {'D': 1, 'W': 7, 'MS': 30.44, 'QS': 91.25, 'YS': 365.25}.get(self.freq, 30.44)
-                
-                for i in range(1, len(p_fut) + 1):
-                    total_days = i * days_per_step
-                    # Calcul de la remontée spécifique à cette distance et ce temps
-                    h = self.calculate_spatial_impact(Q, S, K, dist, total_days, Area)
-                    impact_spatial.append(h)
-                
-                impact_spatial = np.array(impact_spatial)
-                
-                # Application de l'impact sur les prévisions
-                p_fut = p_fut + impact_spatial
-                lo_f  = lo_f  + impact_spatial
-                hi_f  = hi_f  + impact_spatial
-                
-                # Sécurité anti-division par zéro
-                if Area > 0 and S > 0:
-                    # On s'assure que S est physiquement réaliste (entre 0.0001 et 1.0)
-                    safe_s = max(0.0001, min(S, 1.0))
-                    rise_per_step = (Q * days_per_step) / (Area * safe_s)
-                else:
-                    rise_per_step = 0
-                
-                # L'impact est cumulatif (l'eau reste dans la nappe)
-                impact_cumule = np.cumsum(np.full(len(p_fut), rise_per_step))
-                
-                p_fut = p_fut + impact_cumule
-                lo_f  = lo_f  + impact_cumule
-                hi_f  = hi_f  + impact_cumule
-    
-                # ── 6. Sauvegarde et affichage
-                self.pred_df = pd.DataFrame({
-                    'date':      fut_dates,
-                    'prevision': p_fut,
-                    'ic_bas':    lo_f,
-                    'ic_haut':   hi_f,
-                })
-    
-                self.show_plot(df_train, df_val, p_val, lo_v, hi_v,
-                               fut_dates, p_fut, lo_f, hi_f)
-                self.set_status('Analyse terminée.', '#1a7a1a')
-    
-            except Exception as e:
-                self.set_status('Erreur lors de l\'analyse.', '#cc0000')
-                messagebox.showerror("Erreur analyse", str(e))
+        if self.df is None:
+            messagebox.showwarning('Attention', "Chargez d'abord un fichier Excel.")
+            return
+        try:
+            self.cfg.future_years     = int(self.future_var.get())
+            self.cfg.validation_years = int(self.val_var.get())
+            self.cfg.model            = self.model_var.get()
+
+            Q    = float(self.recharge_var.get())
+            S    = float(self.s_coeff_var.get())
+            Area = float(self.area_var.get())
+            K    = float(self.k_var.get())
+            dist = float(self.dist_var.get())
+
+            ci_pct = float(self.ci_var.get())
+            if not (50.0 < ci_pct < 100.0):
+                raise ValueError('Le niveau de confiance doit être entre 50 et 100 %.')
+            self.cfg.ci_level = (100.0 - ci_pct) / 100.0
+
+            self.cfg.n_bootstraps = int(self.boot_var.get())
+            self.cfg.ets_type     = self.ets_var.get()[0]
+
+            self.set_status('Calcul en cours…', '#a07000')
+
+            # ── Split validation
+            v_steps = min(
+                future_steps(self.freq, self.cfg.validation_years),
+                len(self.df) // 4
+            )
+            if v_steps < 1:
+                raise ValueError('Pas assez de données pour la période de validation.')
+
+            df_train = self.df.iloc[:-v_steps].copy()
+            df_val   = self.df.iloc[-v_steps:].copy()
+
+            # ── Validation
+            p_val, lo_v, hi_v = self._fit_predict(df_train, v_steps, df_val['date'])
+
+            y_true = df_val['level'].values
+            mae    = mean_absolute_error(y_true, p_val)
+            rmse   = np.sqrt(mean_squared_error(y_true, p_val))
+            nonzero = y_true != 0
+            mape   = (np.mean(np.abs((y_true[nonzero] - p_val[nonzero]) / y_true[nonzero])) * 100
+                      if nonzero.any() else float('nan'))
+
+            self.metrics = {'MAE': mae, 'RMSE': rmse, 'MAPE': mape}
+            self.metrics_labels['MAE'].config(text=f'{mae:.4f} m')
+            self.metrics_labels['RMSE'].config(text=f'{rmse:.4f} m')
+            self.metrics_labels['MAPE'].config(
+                text=f'{mape:.2f} %' if not np.isnan(mape) else 'N/A')
+
+            # ── Prévision future
+            fut_s     = future_steps(self.freq, self.cfg.future_years)
+            fut_dates = pd.date_range(
+                self.df['date'].max(), periods=fut_s + 1, freq=self.freq)[1:]
+
+            p_fut, lo_f, hi_f = self._fit_predict(self.df, fut_s, pd.Series(fut_dates))
+
+            # ── Impact spatial cumulé
+            days_per_step = {'D': 1, 'W': 7, 'MS': 30.44,
+                             'QS': 91.25, 'YS': 365.25}.get(self.freq, 30.44)
+
+            impact_spatial = np.array([
+                self.calculate_spatial_impact(Q, S, K, dist, i * days_per_step, Area)
+                for i in range(1, len(p_fut) + 1)
+            ])
+
+            p_fut += impact_spatial
+            lo_f  += impact_spatial
+            hi_f  += impact_spatial
+
+            # ── Impact cumulé volumétrique
+            if Area > 0 and S > 0:
+                safe_s        = max(0.0001, min(S, 1.0))
+                rise_per_step = (Q * days_per_step) / (Area * safe_s)
+            else:
+                rise_per_step = 0
+
+            impact_cumule = np.cumsum(np.full(len(p_fut), rise_per_step))
+            p_fut += impact_cumule
+            lo_f  += impact_cumule
+            hi_f  += impact_cumule
+
+            # ── Sauvegarde et affichage
+            self.pred_df = pd.DataFrame({
+                'date':      fut_dates,
+                'prevision': p_fut,
+                'ic_bas':    lo_f,
+                'ic_haut':   hi_f,
+            })
+
+            self.show_plot(df_train, df_val, p_val, lo_v, hi_v,
+                           fut_dates, p_fut, lo_f, hi_f)
+            self.set_status('Analyse terminée.', '#1a7a1a')
+
+        except Exception as e:
+            self.set_status("Erreur lors de l'analyse.", '#cc0000')
+            messagebox.showerror('Erreur analyse', str(e))
 
     def _fit_predict(self, df_fit: pd.DataFrame, steps: int,
                      future_dates: pd.Series):
-        """Dispatch vers le bon modèle."""
         model_name = self.cfg.model
         sp = freq_to_seasonal_periods(self.freq)
-        y = df_fit['level'].values
+        y  = df_fit['level'].values
 
         if model_name == 'ETS':
             m = ETSModel(self.cfg.ets_type, sp, self.cfg.ci_level)
@@ -695,12 +694,10 @@ def create_features(series, lags):
             pred, lo, hi = m.predict(steps)
 
         elif model_name in ('RandomForest', 'XGBoost'):
-            m = SklearnModel(model_name, self.cfg.ci_level,
-                             self.cfg.n_bootstraps)
+            m = SklearnModel(model_name, self.cfg.ci_level, self.cfg.n_bootstraps)
             m.fit(df_fit)
             pred, lo, hi = m.predict(future_dates)
 
-<<<<<<< HEAD
         else:
             raise ValueError(f'Modèle inconnu : {model_name}')
 
@@ -715,17 +712,13 @@ def create_features(series, lags):
             w.destroy()
 
         plt.close('all')
-        
-        # On ne crée plus qu'un seul axe (ax) au lieu de deux
         fig, ax = plt.subplots(figsize=(11, 7), dpi=95)
         fig.patch.set_facecolor('#fafafa')
 
-        ci_pct = int((1 - self.cfg.ci_level) * 100)
-        val_dates = df_val['date'].values
-
-        # ── Zones de fond colorées
-        split_date   = df_val['date'].iloc[0]
-        end_val_date = df_val['date'].iloc[-1]
+        ci_pct     = int((1 - self.cfg.ci_level) * 100)
+        val_dates  = df_val['date'].values
+        split_date    = df_val['date'].iloc[0]
+        end_val_date  = df_val['date'].iloc[-1]
 
         ax.axvspan(df_train['date'].iloc[0], split_date,
                    alpha=0.04, color='#2c7be5', zorder=0)
@@ -734,58 +727,46 @@ def create_features(series, lags):
         ax.axvspan(end_val_date, future_dates[-1],
                    alpha=0.05, color='#20c997', zorder=0)
 
-        # ── Séparateurs verticaux
-        ax.axvline(split_date, color='#f6c90e', linewidth=1.4, linestyle='--', zorder=2)
+        ax.axvline(split_date,   color='#f6c90e', linewidth=1.4, linestyle='--', zorder=2)
         ax.axvline(end_val_date, color='#20c997', linewidth=1.4, linestyle='--', zorder=2)
 
-        # ── 1. Historique entraînement
         ax.plot(df_train['date'], df_train['level'],
-                color='#2c7be5', linewidth=1.6, label='Historique (entraînement)', zorder=3)
-
-        # ── 2. Valeurs réelles de contrôle
+                color='#2c7be5', linewidth=1.6,
+                label='Historique (entraînement)', zorder=3)
         ax.plot(val_dates, df_val['level'],
-                color='#f6c90e', linewidth=2.0, zorder=4, label='Valeurs réelles (contrôle)')
-
-        # ── 3. Courbe modélisée — validation
+                color='#f6c90e', linewidth=2.0, zorder=4,
+                label='Valeurs réelles (contrôle)')
         ax.plot(val_dates, pred_val,
                 color='#e85d04', linewidth=1.8, linestyle='--',
                 zorder=4, label='Modèle (validation)')
         ax.fill_between(val_dates, lo_val, hi_val,
-                        alpha=0.15, color='#e85d04', label=f'IC {ci_pct}% (validation)')
+                        alpha=0.15, color='#e85d04',
+                        label=f'IC {ci_pct}% (validation)')
 
-        # ── 4. Raccord visuel et dernière valeur réelle
-        last_real_date = df_val['date'].iloc[-1]
+        last_real_date  = df_val['date'].iloc[-1]
         last_real_level = df_val['level'].iloc[-1]
         ax.scatter([last_real_date], [last_real_level],
-                   color='#e85d04', s=55, zorder=6, marker='D', label='Dernière valeur réelle')
+                   color='#e85d04', s=55, zorder=6,
+                   marker='D', label='Dernière valeur réelle')
 
-        # ── 5. Prévision future
         ax.plot(future_dates, pred_fut,
                 color='#20c997', linewidth=2.2, linestyle='--',
                 zorder=4, label='Prévision future')
         ax.fill_between(future_dates, lo_fut, hi_fut,
-                        alpha=0.15, color='#20c997', label=f'IC {ci_pct}% (futur)')
+                        alpha=0.15, color='#20c997',
+                        label=f'IC {ci_pct}% (futur)')
 
-        # ── Formatage des Axes (Dates en abscisses) ──
-        ax.set_title(f'Prévision Piézométrique — {self.cfg.model} | IC {ci_pct}%', 
+        ax.set_title(f'Prévision Piézométrique — {self.cfg.model} | IC {ci_pct}%',
                      fontsize=13, fontweight='bold', pad=12)
         ax.set_ylabel('Niveau piézométrique (m)')
         ax.grid(True, alpha=0.22)
         ax.legend(fontsize=8, ncol=3, loc='upper left')
-
-        # Formatage précis de l'axe X
         ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m')) # Affiche Année-Mois
-        
-        # Incliner les dates pour éviter le chevauchement
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
         fig.autofmt_xdate()
 
-
-        # Intégration dans Tkinter
         canvas = FigureCanvasTkAgg(fig, master=self.content)
         canvas.draw()
-        
-        # Utilise get_tk_widget() au lieu de get_widget()
         canvas.get_tk_widget().grid(row=0, column=0, sticky='nswe')
 
     # ── Export ──────────────────────────────────────────────────────────────────
@@ -800,7 +781,6 @@ def create_features(series, lags):
             out = self.pred_df.copy()
             out['date'] = out['date'].dt.date
             out.to_csv(path, index=False, float_format='%.4f')
-            # Ajoute les métriques en commentaire
             if self.metrics:
                 with open(path, 'a') as f:
                     f.write('\n# Métriques validation\n')
@@ -808,250 +788,47 @@ def create_features(series, lags):
                         f.write(f'# {k},{v:.4f}\n')
             self.set_status('Export CSV terminé.', '#1a7a1a')
 
-=======
-def apply_hydro_model(prediction_series, storage, r_factor, r_mait, pumping, h_str, ppy, last_date):
-    adjusted = prediction_series.values.copy()
-    cumul = 0.0
-    s_val = storage if storage > 0 else 0.02
-    for i in range(len(adjusted)):
-        adjusted[i] += r_factor * np.sin(2 * np.pi * i / ppy)
-        if prediction_series.index[i] > last_date:
-            cumul += ((r_mait - pumping) / 12 / s_val) * h_str
-        adjusted[i] += cumul
-    return pd.Series(adjusted, index=prediction_series.index)
 
+# ─── ToolTip ───────────────────────────────────────────────────────────────────
 
-def calibrate_params(levels):
-    std = np.std(levels)
-    return max(0.01, min(0.1, std / 10)), std / 20, 0.2
-
-
-def plot_result_v3(dates_hist, levels_hist, prediction_series, start_val_date, model_name, mape, erreur, mae):
-    plt.figure(figsize=(12, 6))
-    plt.plot(dates_hist, levels_hist, label="Observé (Historique)", color='#2c3e50', alpha=0.6, linewidth=1.5)
-    plt.fill_between(prediction_series.index, prediction_series - erreur, prediction_series + erreur, color='#e74c3c',
-                     alpha=0.15)
-    plt.plot(prediction_series.index, prediction_series, label=f"Prédiction {model_name}", color='#e74c3c',
-             linestyle='--', linewidth=2)
-    plt.axvspan(start_val_date, dates_hist.max(), color='gray', alpha=0.1)
-
-    color_box = '#27ae60' if mape <= 1 else '#f39c12' if mape <= 5 else '#c0392b'
-    stats_text = f"MAPE: {mape:.2f}%\nMAE: {mae:.2f} m\nIncertitude: ±{erreur:.2f} m"
-    plt.text(0.02, 0.95, stats_text, transform=plt.gca().transAxes, verticalalignment='top',
-             fontsize=10, fontweight='bold', color='white',
-             bbox=dict(facecolor=color_box, alpha=0.8, boxstyle='round,pad=0.5'))
-
-    plt.title(f"Expert Piézométrie : Analyse {model_name}", fontsize=14, pad=20)
-    plt.legend(loc='lower left')
-    plt.grid(True, linestyle=':', alpha=0.5)
-    plt.tight_layout()
-    plt.show()
-
-
-# --- ToolTip Class ---
-class ToolTip(object):
+class ToolTip:
     def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tipwindow = None
-        self.widget.bind("<Enter>", self.show_tip)
-        self.widget.bind("<Leave>", self.hide_tip)
+        self.widget     = widget
+        self.text       = text
+        self.tipwindow  = None
+        widget.bind('<Enter>', self.show_tip)
+        widget.bind('<Leave>', self.hide_tip)
 
     def show_tip(self, event=None):
-        if self.tipwindow or not self.text: return
-        x, y, cx, cy = self.widget.bbox("insert")
+        if self.tipwindow or not self.text:
+            return
+        x, y, cx, cy = self.widget.bbox('insert')
         x = x + self.widget.winfo_rootx() + 25
         y = y + cy + self.widget.winfo_rooty() + 25
         self.tipwindow = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(1)
-        tw.wm_geometry("+%d+%d" % (x, y))
-        label = tk.Label(tw, text=self.text, justify=tk.LEFT, background="#34495e", foreground="white",
-                         relief=tk.SOLID, borderwidth=1, font=("Arial", "9", "normal"), padx=8, pady=5)
-        label.pack(ipadx=1)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f'+{x}+{y}')
+        tk.Label(tw, text=self.text, justify=tk.LEFT,
+                 background='#34495e', foreground='white',
+                 relief=tk.SOLID, borderwidth=1,
+                 font=('Arial', '9', 'normal'),
+                 padx=8, pady=5).pack(ipadx=1)
 
     def hide_tip(self, event=None):
         tw = self.tipwindow
         self.tipwindow = None
-        if tw: tw.destroy()
+        if tw:
+            tw.destroy()
 
-
-# --- GUI Améliorée ---
-class PiezometrieApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Expert Piézométrie v4.0")
-        self.root.geometry("500x650")
-        self.root.configure(bg="#f0f0f0")
-
-        # Style
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure("TButton", font=("Helvetica", 10, "bold"), padding=6)
-        style.configure("Header.TLabel", font=("Helvetica", 12, "bold"), foreground="#2c3e50")
-
-        self.vars = {}
-        self.setup_ui()
-
-    def setup_ui(self):
-        # Header
-        header = ttk.Frame(self.root, padding=10)
-        header.pack(fill=tk.X)
-        ttk.Label(header, text="Analyse et Prédiction Piézométrique", style="Header.TLabel").pack()
-
-        # Onglets
-        nb = ttk.Notebook(self.root)
-        nb.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-        tab1 = ttk.Frame(nb, padding=15)
-        tab2 = ttk.Frame(nb, padding=15)
-        nb.add(tab1, text="Paramètres Projets")
-        nb.add(tab2, text="Configuration Modèle")
-
-        # --- ONGLET 1 : PROJET ---
-        proj_frame = ttk.LabelFrame(tab1, text=" Simulation & Hydrogéologie ", padding=10)
-        proj_frame.pack(fill=tk.X, pady=5)
-
-        gen_f = [
-            ("Modèle", ["ARIMA", "ETS", "RandomForest", "XGBoost"]),
-            ("Années futur", "10"),
-            ("Années validation", "5"),
-            ("Recharge maîtrisée (m)", "0.5"),
-            ("Pompage (m)", "0.0")
-        ]
-
-        for i, (label, default) in enumerate(gen_f):
-            ttk.Label(proj_frame, text=label).grid(row=i, column=0, sticky=tk.W, pady=5)
-            var = tk.StringVar(value=default[0] if isinstance(default, list) else default)
-            if isinstance(default, list):
-                cb = ttk.Combobox(proj_frame, textvariable=var, values=default, state="readonly", width=18)
-                cb.grid(row=i, column=1, pady=5, sticky=tk.E)
-            else:
-                ttk.Entry(proj_frame, textvariable=var, width=20).grid(row=i, column=1, pady=5, sticky=tk.E)
-            self.vars[label] = var
-
-        # --- ONGLET 2 : CALIBRATION ---
-        cal_frame = ttk.LabelFrame(tab2, text=" Réglages Hyperparamètres ", padding=10)
-        cal_frame.pack(fill=tk.X, pady=5)
-
-        DESC = {
-            "Mémoire (Lags)": "Nb de mois passés analysés. Augmentez pour nappes lentes.",
-            "ARIMA (p,d,q)": "Format: p,d,q. Standard 1,1,1.",
-            "ML: Nb Arbres": "Stabilité de la forêt (Standard: 100).",
-            "ML: Profondeur Max": "Complexité. Réduisez (3-5) si sur-apprentissage.",
-            "Option ETS (1-4)": "1:Simple, 2:Tendance, 3:Saisonnier, 4:Complet"
-        }
-
-        cal_f = [
-            ("Mémoire (Lags)", "12"),
-            ("ARIMA (p,d,q)", "1,1,1"),
-            ("ML: Nb Arbres", "100"),
-            ("ML: Profondeur Max", "6"),
-            ("Option ETS (1-4)", "4")
-        ]
-
-        for i, (label, default) in enumerate(cal_f):
-            ttk.Label(cal_frame, text=label).grid(row=i, column=0, sticky=tk.W, pady=5)
-            var = tk.StringVar(value=default)
-            ttk.Entry(cal_frame, textvariable=var, width=15).grid(row=i, column=1, pady=5)
-
-            help_btn = ttk.Label(cal_frame, text="ⓘ", foreground="#3498db", cursor="hand2")
-            help_btn.grid(row=i, column=2, padx=5)
-            ToolTip(help_btn, DESC[label])
-            self.vars[label] = var
-
-        # --- BAS DE FENÊTRE ---
-        footer = ttk.Frame(self.root, padding=20)
-        footer.pack(fill=tk.X)
-
-        self.btn_run = ttk.Button(footer, text="CHARGER DONNÉES & LANCER", command=self.execute)
-        self.btn_run.pack(fill=tk.X)
-
-        self.progress = ttk.Progressbar(footer, mode='indeterminate')
-        self.progress.pack(fill=tk.X, pady=10)
-
-        self.log_label = ttk.Label(footer, text="Prêt", font=("Consolas", 9), foreground="gray")
-        self.log_label.pack()
-
-    def log(self, text):
-        self.log_label.config(text=text)
-        self.root.update_idletasks()
-
-    def execute(self):
-        self.progress.start()
-        self.log("Traitement en cours...")
-        # On appelle ta fonction run_model (adaptée ici pour la classe)
-        try:
-            run_model(self.vars, self.root)
-            self.log("Analyse terminée avec succès.")
-        except Exception as e:
-            messagebox.showerror("Erreur", f"Une erreur est survenue : {e}")
-            self.log("Erreur lors de l'exécution.")
-        finally:
-            self.progress.stop()
-
-
-# --- Adaptation de run_model pour fonctionner avec la nouvelle GUI ---
-def run_model(vars, root):
-    # La logique de calcul reste exactement la même que ton code original
-    try:
-        y_fut, y_val = int(vars["Années futur"].get()), int(vars["Années validation"].get())
-        r_mait, pump = float(vars["Recharge maîtrisée (m)"].get()), float(vars["Pompage (m)"].get())
-        mod, ets_opt = vars["Modèle"].get(), vars["Option ETS (1-4)"].get()
-        lag = int(vars["Mémoire (Lags)"].get())
-        order = tuple(map(int, vars["ARIMA (p,d,q)"].get().split(',')))
-        n_est, m_dep = int(vars["ML: Nb Arbres"].get()), int(vars["ML: Profondeur Max"].get())
-        m_depth = m_dep if m_dep > 0 else None
-    except Exception as e:
-        raise ValueError(f"Données saisies incorrectes : {e}")
-
-    file_path = askopenfilename(filetypes=[("Excel", "*.xlsx")])
-    if not file_path: return
-
-    df = pd.read_excel(file_path)
-    df_clean = pd.DataFrame(
-        {'date': pd.to_datetime(df.iloc[:, 4]), 'level': df.iloc[:, 6].astype(float)}).sort_values(
-        'date').set_index('date')
-
-    last_date = df_clean.index.max()
-    start_val = last_date - relativedelta(years=y_val)
-    train = df_clean[df_clean.index < start_val]['level']
-    steps = int((y_val + y_fut) * 12)
-    storage, r_fact, h_str = calibrate_params(df_clean['level'])
-
-    if mod == "ARIMA":
-        raw = ARIMA(train.values, order=order).fit().forecast(steps)
-    elif mod == "ETS":
-        raw = ExponentialSmoothing(train.values, trend=('add' if ets_opt != '1' else None), seasonal='add',
-                                   seasonal_periods=12).fit().forecast(steps)
-    elif mod == "RandomForest":
-        raw = model_rf(train, steps, lag, n_est, m_depth)
-    else:
-        raw = model_xgb(train, steps, lag, n_est, m_depth)
-
-    dates = pd.date_range(start=start_val + pd.DateOffset(months=1), periods=steps, freq='MS')
-    prediction = apply_hydro_model(pd.Series(raw, index=dates), storage, r_fact, r_mait, pump, h_str, 12, last_date)
-
-    comp = pd.DataFrame({'obs': df_clean['level'], 'pre': prediction}).dropna()
-    mape = np.mean(np.abs((comp['obs'] - comp['pre']) / comp['obs'])) * 100 if not comp.empty else 0
-    mae = np.mean(np.abs(comp['obs'] - comp['pre'])) if not comp.empty else 0
-    std = np.nanstd(comp['obs'] - comp['pre']) if not comp.empty else 0
-
-    plot_result_v3(df_clean.index, df_clean['level'], prediction, start_val, mod, mape, std, mae)
->>>>>>> bfe4c0061e908dded20173f648fc739056429be3
 
 # ─── Point d'entrée ────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     root = tk.Tk()
-<<<<<<< HEAD
-    # Optionnel : Appliquer un style global plus moderne
+
     style = ttk.Style()
     if 'arc' in style.theme_names():
         style.theme_use('arc')
-        
+
     app = App(root)
     root.mainloop()
-=======
-    app = PiezometrieApp(root)
-    root.mainloop()gi
->>>>>>> bfe4c0061e908dded20173f648fc739056429be3
