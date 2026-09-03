@@ -1536,9 +1536,9 @@ class App:
             self.cfg.n_bootstraps = int(self.boot_var.get())
             self.cfg.ets_type     = self.ets_var.get()[0]
             self.set_status('Calcul en cours…', '#a07000')
-            for idx in (1, 2, 3):
-                n_obs = len(self._merged_for_target(idx))
-                print(f"{self.chronicles[idx]['name']} : {n_obs} observations")
+            # for idx in (1, 2, 3):
+            #     n_obs = len(self._merged_for_target(idx))
+            #     print(f"{self.chronicles[idx]['name']} : {n_obs} observations")
 
             v_steps = future_steps(self.freq, self.cfg.validation_years)
             if v_steps >= len(self.df):
@@ -1712,16 +1712,6 @@ class App:
                         f.write(f'# {k},{v:.4f}\n')
             self.set_status('Export CSV terminé.', '#1a7a1a')
             
-    # def chronicles_ready(self):
-    #     loaded = {i: c for i, c in self.chronicles.items() if c is not None}
-    #     if len(loaded) < 3:
-    #         return False, f"Il manque {3-len(loaded)} chronique(s) — 3 sont requises."
-    #     masses = [c['masse_eau'].strip() for c in loaded.values()]
-    #     if any(not m for m in masses):
-    #         return False, "Renseignez le code de la masse d'eau ADES pour les 3 chroniques."
-    #     if len({m.lower() for m in masses}) > 1:
-    #         return False, "Les 3 chroniques doivent appartenir à la même masse d'eau ADES."
-    #     return True, f"✓ 3 chroniques prêtes — masse d'eau : {masses[0]}"
     
     def refresh_chronicles_view(self):
         ok, msg = self.chronicles_ready()
