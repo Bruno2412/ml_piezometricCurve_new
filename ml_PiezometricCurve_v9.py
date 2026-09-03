@@ -70,6 +70,15 @@ def make_features(dates: pd.Series) -> pd.DataFrame:
     df['quarter']   = df['date'].dt.quarter
     return df.drop(columns=['date'])
 
+def _compute_correlation_matrix(self, loaded):
+    resampled = {}
+    for i, c in loaded.items():
+        s = c['df'].set_index('date')['level'].sort_index()
+        resampled[c['name']] = s.resample('MS').mean()
+    combined = pd.DataFrame(resampled).dropna()
+    if len(combined) < 3:
+        return None, 0
+    return combined.corr(method='pearson'), len(combined)
 
 def detect_frequency(dates: pd.Series) -> str:
     diffs = dates.diff().dropna().dt.days
@@ -850,10 +859,21 @@ class App:
                  f' — {len(target)} observations (cible : {self.chronicles[self.target_idx]["name"]})')
         self.populate_table(target)
         self.set_status('Chroniques prêtes — analyse disponible.', '#1a7a1a')
-    
+        
+    def _compute_correlation_matrix(self, loaded):
+        resampled = {}
+        for i, c in loaded.items():
+            s = c['df'].set_index('date')['level'].sort_index()
+            resampled[c['name']] = s.resample('MS').mean()
+        combined = pd.DataFrame(resampled).dropna()
+        if len(combined) < 3:
+            return None, 0
+        return combined.corr(method='pearson'), len(combined)
+
     def _build_network_tab(self):
         tab = self.tab_network
         tab.rowconfigure(1, weight=1)
+        tab.rowconfigure(2, weight=0)
         tab.columnconfigure(0, weight=1)
         header = tk.Frame(tab, bg='white')
         header.grid(row=0, column=0, sticky='ew')
@@ -863,9 +883,45 @@ class App:
         self.network_plot_frame.grid(row=1, column=0, sticky='nswe')
         self.network_plot_frame.rowconfigure(0, weight=1)
         self.network_plot_frame.columnconfigure(0, weight=1)
+    
+        self.corr_frame = tk.Frame(tab, bg='#f5f6fa', highlightbackground='#ccc', highlightthickness=1)
+        self.corr_frame.grid(row=2, column=0, sticky='ew', padx=10, pady=(0, 10))
+        self.corr_label = tk.Label(self.corr_frame, text='Corrélation : chargez les 3 points.',
+                                    bg='#f5f6fa', fg='#555', font=('Consolas', 9),
+                                    justify='left', anchor='w')
+        self.corr_label.pack(fill='x', padx=10, pady=8)
+    
         self._plot_network_chronicles()
+
+    # def _build_network_tab(self):
+    #     tab = self.tab_network
+    #     tab.rowconfigure(1, weight=1)
+    #     tab.rowconfigure(2, weight=0)
+    #     tab.columnconfigure(0, weight=1)
+    #     header = tk.Frame(tab, bg='white')
+    #     header.grid(row=0, column=0, sticky='ew')
+    #     tk.Label(header, text="Réseau de 3 chroniques piézométriques ADES (même masse d'eau)",
+    #              font=('Segoe UI', 11, 'bold'), bg='white').pack(anchor='w', padx=10, pady=8)
+        
+    #     self.network_plot_frame = tk.Frame(tab, bg='white')
+    #     self.network_plot_frame.grid(row=1, column=0, sticky='nswe')
+    #     self.network_plot_frame.rowconfigure(0, weight=1)
+    #     self.network_plot_frame.columnconfigure(0, weight=1)
+    #     self._plot_network_chronicles()
     
     def _plot_network_chronicles(self):
+        
+        for w in self.network_plot_frame.winfo_children():
+            w.destroy()
+        loaded = {i: c for i, c in self.chronicles.items() if c is not None}
+        if not loaded:
+            tk.Label(self.network_plot_frame,
+                     text="Chargez les 3 chroniques piézométriques (panneau de gauche) pour afficher le réseau.",
+                     bg='white', fg='#888', font=('Segoe UI', 10)).grid(row=0, column=0, pady=40)
+            if hasattr(self, 'corr_label'):
+                self.corr_label.config(text='Corrélation : chargez les 3 points.', fg='#555')
+            return
+        
         for w in self.network_plot_frame.winfo_children():
             w.destroy()
         loaded = {i: c for i, c in self.chronicles.items() if c is not None}
@@ -896,6 +952,35 @@ class App:
         canvas = FigureCanvasTkAgg(fig, master=self.network_plot_frame)
         canvas.draw()
         canvas.get_tk_widget().grid(row=0, column=0, sticky='nswe')
+        
+        canvas = FigureCanvasTkAgg(fig, master=self.network_plot_frame)
+        canvas.draw()
+        canvas.get_tk_widget().grid(row=0, column=0, sticky='nswe')
+    
+        # ── Corrélation par paires ──────────────────────────────────────────
+        if hasattr(self, 'corr_label'):
+            if len(loaded) < 3:
+                self.corr_label.config(
+                    text=f"Corrélation : {len(loaded)}/3 point(s) chargé(s).", fg='#a07000')
+            else:
+                corr, n_pts = self._compute_correlation_matrix(loaded)
+                if corr is None:
+                    self.corr_label.config(
+                        text="Corrélation : pas assez de dates communes entre les 3 points.",
+                        fg='#cc0000')
+                else:
+                    names = corr.columns.tolist()
+                    pairs = [(names[0], names[1]), (names[0], names[2]), (names[1], names[2])]
+                    lines = []
+                    for a, b in pairs:
+                        r = corr.loc[a, b]
+                        tag = '✓ forte' if abs(r) >= 0.7 else ('~ modérée' if abs(r) >= 0.4 else '✗ faible')
+                        lines.append(f'r({a}, {b}) = {r:+.2f}  [{tag}]')
+                    txt = f"Corrélation (Pearson, base mensuelle, n={n_pts} mois communs) :\n" + '\n'.join(lines)
+                    min_abs_r = corr.where(~np.eye(len(corr), dtype=bool)).abs().min().min()
+                    self.corr_label.config(
+                        text=txt,
+                        fg=('#1a7a1a' if min_abs_r >= 0.7 else ('#a07000' if min_abs_r >= 0.4 else '#cc0000')))
 
     # ══════════════════════════════════════════════════════════════════════════
     # ─── DIGITAL TWIN TAB ──────────────────────────────────────────────────
