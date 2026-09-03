@@ -313,9 +313,39 @@ class App:
         self.root.rowconfigure(0, weight=1)
     
         # ── Sidebar ──────────────────────────────────────────────────────────
-        sidebar = tk.Frame(self.root, bg='#1f2d3d', width=290)
-        sidebar.grid(row=0, column=0, sticky='nswe')
-        sidebar.grid_propagate(False)
+        sidebar_container = tk.Frame(self.root, bg='#1f2d3d', width=290)
+        sidebar_container.grid(row=0, column=0, sticky='nswe')
+        sidebar_container.grid_propagate(False)
+        sidebar_container.rowconfigure(0, weight=1)
+        sidebar_container.columnconfigure(0, weight=1)
+        
+        sidebar_canvas = tk.Canvas(sidebar_container, bg='#1f2d3d',
+                                    highlightthickness=0, width=290)
+        sidebar_canvas.grid(row=0, column=0, sticky='nswe')
+        
+        sidebar_scroll = ttk.Scrollbar(sidebar_container, orient='vertical',
+                                        command=sidebar_canvas.yview)
+        sidebar_scroll.grid(row=0, column=1, sticky='ns')
+        sidebar_canvas.configure(yscrollcommand=sidebar_scroll.set)
+        
+        sidebar = tk.Frame(sidebar_canvas, bg='#1f2d3d')
+        sidebar_window = sidebar_canvas.create_window((0, 0), window=sidebar, anchor='nw')
+        
+        def _on_sidebar_configure(event=None):
+            sidebar_canvas.configure(scrollregion=sidebar_canvas.bbox('all'))
+            sidebar_canvas.itemconfig(sidebar_window, width=sidebar_canvas.winfo_width())
+        
+        sidebar.bind('<Configure>', _on_sidebar_configure)
+        sidebar_canvas.bind('<Configure>', _on_sidebar_configure)
+        
+        def _on_mousewheel(event):
+            sidebar_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        
+        sidebar_canvas.bind('<Enter>', lambda e: sidebar_canvas.bind_all('<MouseWheel>', _on_mousewheel))
+        sidebar_canvas.bind('<Leave>', lambda e: sidebar_canvas.unbind_all('<MouseWheel>'))
+        
+        
+        
     
         main = tk.Frame(self.root, bg='#f5f6fa')
         main.grid(row=0, column=1, sticky='nswe')
@@ -521,159 +551,6 @@ class App:
         self.nb.add(self.tab_dt, text='🌐  Digital Twin')
         self._build_digital_twin_tab()
     
-    # def build_ui(self):
-    #     self.root.columnconfigure(1, weight=1)
-    #     self.root.rowconfigure(0, weight=1)
-
-    #     # ── Sidebar ──────────────────────────────────────────────────────────
-    #     sidebar = tk.Frame(self.root, bg='#1f2d3d', width=290)
-    #     sidebar.grid(row=0, column=0, sticky='nswe')
-    #     sidebar.grid_propagate(False)
-
-    #     main = tk.Frame(self.root, bg='#f5f6fa')
-    #     main.grid(row=0, column=1, sticky='nswe')
-    #     main.rowconfigure(1, weight=1)
-    #     main.columnconfigure(0, weight=1)
-    #     self.main = main
-
-    #     tk.Label(sidebar, text='Expert Piézométrie Pro',
-    #              fg='white', bg='#1f2d3d',
-    #              font=('Segoe UI', 13, 'bold')).pack(pady=14)
-
-    #     ttk.Button(sidebar, text='📂  Charger Excel',
-    #                command=self.load_file).pack(fill='x', padx=14, pady=3)
-    #     ttk.Button(sidebar, text='▶  Lancer Analyse',
-    #                command=self.run_analysis).pack(fill='x', padx=14, pady=3)
-    #     ttk.Button(sidebar, text='💾  Exporter CSV',
-    #                command=self.export_csv).pack(fill='x', padx=14, pady=3)
-    #     ttk.Button(sidebar, text='✕  Quitter',
-    #                command=self.root.destroy).pack(fill='x', padx=14, pady=10)
-
-    #     # ── Paramètres modèle
-    #     params = ttk.LabelFrame(sidebar, text='Paramètres modèle')
-    #     params.pack(fill='x', padx=10, pady=5)
-
-    #     self.model_var = tk.StringVar(value='ETS')
-    #     ttk.Label(params, text='Modèle').pack(anchor='w', padx=8, pady=(6, 0))
-    #     model_cb = ttk.Combobox(params, textvariable=self.model_var,
-    #                             values=['ETS', 'ARIMA', 'RandomForest', 'XGBoost'],
-    #                             state='readonly')
-    #     model_cb.pack(fill='x', padx=8, pady=3)
-    #     model_cb.bind('<<ComboboxSelected>>', self._on_model_change)
-
-    #     self.ets_frame = ttk.Frame(params)
-    #     self.ets_frame.pack(fill='x')
-    #     self.ets_var = tk.StringVar(value='4')
-    #     ttk.Label(self.ets_frame, text='Type ETS').pack(anchor='w', padx=8)
-    #     ttk.Combobox(self.ets_frame, textvariable=self.ets_var,
-    #                  values=['1 - Simple', '2 - Tendance',
-    #                          '3 - Saisonnier', '4 - Complet'],
-    #                  state='readonly').pack(fill='x', padx=8, pady=3)
-
-    #     self.future_var = tk.IntVar(value=5)
-    #     ttk.Label(params, text='Années futures').pack(anchor='w', padx=8)
-    #     ttk.Entry(params, textvariable=self.future_var).pack(fill='x', padx=8, pady=3)
-
-    #     self.val_var = tk.IntVar(value=20)
-    #     ttk.Label(params, text='Années validation').pack(anchor='w', padx=8)
-    #     ttk.Entry(params, textvariable=self.val_var).pack(fill='x', padx=8, pady=3)
-
-    #     # ── Injection Maîtrisée
-    #     recharge_frame = ttk.LabelFrame(sidebar, text='Injection Maîtrisée')
-    #     recharge_frame.pack(fill='x', padx=10, pady=5)
-
-    #     self.thick_var = tk.DoubleVar(value=10.0)
-    #     ttk.Label(recharge_frame, text="Épaisseur Aquifère (m)").pack(anchor='w', padx=8, pady=(4, 0))
-    #     ttk.Entry(recharge_frame, textvariable=self.thick_var).pack(fill='x', padx=8, pady=2)
-
-    #     self.recharge_var = tk.DoubleVar(value=0.0)
-    #     ttk.Label(recharge_frame, text='Débit injecté (m³/jour)').pack(anchor='w', padx=8, pady=(4, 0))
-    #     ttk.Entry(recharge_frame, textvariable=self.recharge_var).pack(fill='x', padx=8, pady=2)
-
-    #     self.s_coeff_var = tk.DoubleVar(value=0.05)
-    #     ttk.Label(recharge_frame, text='Coeff. Emmagasinement (S)').pack(anchor='w', padx=8, pady=(4, 0))
-    #     ttk.Entry(recharge_frame, textvariable=self.s_coeff_var).pack(fill='x', padx=8, pady=2)
-
-    #     self.area_var = tk.DoubleVar(value=100.0)
-    #     ttk.Label(recharge_frame, text="Surface de l'ouvrage (m²)").pack(anchor='w', padx=8, pady=(4, 0))
-    #     ttk.Entry(recharge_frame, textvariable=self.area_var).pack(fill='x', padx=8, pady=2)
-
-    #     self.dist_var = tk.DoubleVar(value=50.0)
-    #     ttk.Label(recharge_frame, text='Distance piézo/ouvrage (m)').pack(anchor='w', padx=8, pady=(4, 0))
-    #     ttk.Entry(recharge_frame, textvariable=self.dist_var).pack(fill='x', padx=8, pady=2)
-
-    #     self.k_var = tk.DoubleVar(value=0.0001)
-    #     ttk.Label(recharge_frame, text='Perméabilité K (m/s)').pack(anchor='w', padx=8, pady=(4, 0))
-    #     ttk.Entry(recharge_frame, textvariable=self.k_var).pack(fill='x', padx=8, pady=(2, 6))
-
-    #     ttk.Button(recharge_frame, text="🎯 Caler sur l'historique",
-    #                command=self.calibrate_hydro_parameters).pack(fill='x', padx=8, pady=6)
-
-    #     # ── Intervalle de confiance
-    #     ci_frame = ttk.LabelFrame(sidebar, text='Intervalle de confiance')
-    #     ci_frame.pack(fill='x', padx=10, pady=5)
-
-    #     self.ci_var = tk.DoubleVar(value=68.0)
-    #     ttk.Label(ci_frame, text='Niveau (%)').pack(anchor='w', padx=8, pady=(5, 0))
-    #     ttk.Entry(ci_frame, textvariable=self.ci_var).pack(fill='x', padx=8, pady=3)
-
-    #     self.boot_var = tk.IntVar(value=200)
-    #     ttk.Label(ci_frame, text='Bootstraps (RF/XGB)').pack(anchor='w', padx=8)
-    #     ttk.Entry(ci_frame, textvariable=self.boot_var).pack(fill='x', padx=8, pady=3)
-
-    #     # ── Métriques
-    #     self.metrics_frame = ttk.LabelFrame(sidebar, text='Métriques validation')
-    #     self.metrics_frame.pack(fill='x', padx=10, pady=5)
-    #     self.metrics_labels = {}
-    #     for key in ('MAE', 'RMSE', 'MAPE'):
-    #         row = tk.Frame(self.metrics_frame, bg='#f0f0f0')
-    #         row.pack(fill='x', padx=6, pady=2)
-    #         tk.Label(row, text=f'{key}:', width=6, anchor='w',
-    #                  bg='#f0f0f0').pack(side='left')
-    #         lbl = tk.Label(row, text='—', fg='#1a6ea8',
-    #                        font=('Consolas', 10, 'bold'), bg='#f0f0f0')
-    #         lbl.pack(side='left')
-    #         self.metrics_labels[key] = lbl
-
-    #     # ── Status bar
-    #     top = tk.Frame(main, bg='#f5f6fa')
-    #     top.grid(row=0, column=0, sticky='ew')
-    #     self.status = tk.Label(top, text='Prêt — chargez un fichier Excel',
-    #                            bg='#f5f6fa', fg='#555',
-    #                            font=('Consolas', 10))
-    #     self.status.pack(anchor='w', padx=15, pady=8)
-    #     self.freq_label = tk.Label(top, text='', bg='#f5f6fa', fg='#888',
-    #                                font=('Consolas', 9))
-    #     self.freq_label.pack(anchor='w', padx=15)
-
-    #     # ── Notebook Onglets
-    #     self.nb = ttk.Notebook(main)
-    #     self.nb.grid(row=1, column=0, sticky='nswe', padx=10, pady=8)
-
-    #     # Onglet 1 : tableau + graphique principal
-    #     self.tab_main = tk.Frame(self.nb, bg='white')
-    #     self.nb.add(self.tab_main, text='📊  Analyse')
-    #     self.tab_main.rowconfigure(0, weight=1)
-    #     self.tab_main.columnconfigure(0, weight=1)
-
-    #     self.content = self.tab_main   # compatibilité avec show_plot
-
-    #     self.table = ttk.Treeview(self.tab_main,
-    #                               columns=('date', 'level'), show='headings')
-    #     self.table.heading('date',  text='Date')
-    #     self.table.heading('level', text='Niveau (m)')
-    #     self.table.column('date',  width=160)
-    #     self.table.column('level', width=120)
-    #     self.table.grid(row=0, column=0, sticky='nswe')
-    #     sb = ttk.Scrollbar(self.tab_main, orient='vertical',
-    #                        command=self.table.yview)
-    #     sb.grid(row=0, column=1, sticky='ns')
-    #     self.table.configure(yscrollcommand=sb.set)
-
-    #     # Onglet 2 : Digital Twin
-    #     self.tab_dt = tk.Frame(self.nb, bg=DT_BG)
-    #     self.nb.add(self.tab_dt, text='🌐  Digital Twin')
-    #     self._build_digital_twin_tab()
 
     def _on_model_change(self, _event=None):
         if self.model_var.get() == 'ETS':
@@ -778,47 +655,6 @@ class App:
         self._refresh_target_choices()
         self.refresh_chronicles_view()
             
-    # def load_chronicle(self, idx):
-    #     path = filedialog.askopenfilename(filetypes=[('Excel', '*.xlsx *.xls')])
-    #     if not path:
-    #         return
-    #     try:
-    #         df = self._parse_piezo_excel(path)
-    #         w = self.chron_widgets[idx]
-    #         self.chronicles[idx] = {
-    #             'df': df,
-    #             'name': w['name_var'].get().strip() or f'Piézo {idx}',
-    #             'masse_eau': w['masse_var'].get().strip(),
-    #             'path': path,
-    #         }
-    #         w['status_lbl'].config(text=f'✓ chargé ({len(df)} obs.)', foreground='#1a7a1a')
-    #         self._refresh_target_choices()
-    #         self.refresh_chronicles_view()
-    #     except Exception as e:
-    #         messagebox.showerror('Erreur chargement', str(e))
-            
-    # def _parse_piezo_excel(self, path):
-    #     df = pd.read_excel(path)
-    #     if df.shape[1] < 2:
-    #         raise ValueError('Le fichier doit contenir au moins 2 colonnes : date / niveau')
-    #     date_col  = self._find_column(df, self.DATE_ALIASES)
-    #     level_col = self._find_column(df, self.LEVEL_ALIASES)
-    #     if date_col is None or level_col is None:
-    #         available = list(df.columns)
-    #         raise ValueError(
-    #             f'Colonnes détectées : {available}\n\n'
-    #             f"Colonne date trouvée : {date_col or '❌ NON TROUVÉE'}\n"
-    #             f"Colonne niveau trouvée : {level_col or '❌ NON TROUVÉE'}\n\n"
-    #             "Renommez les colonnes en 'date' et 'level' dans votre fichier."
-    #         )
-    #     df = df[[date_col, level_col]].copy()
-    #     df.columns = ['date', 'level']
-    #     df['date']  = pd.to_datetime(df['date'],  errors='coerce')
-    #     df['level'] = pd.to_numeric(df['level'], errors='coerce')
-    #     df = df.dropna().sort_values('date').reset_index(drop=True)
-    #     if len(df) < 24:
-    #         raise ValueError(f'Données insuffisantes : {len(df)} observations valides (min 24).')
-    #     return df
     
     def chronicles_ready(self):
         loaded = {i: c for i, c in self.chronicles.items() if c is not None}
@@ -1611,25 +1447,6 @@ class App:
                 return cols_lower[alias]
         return None
 
-    # def load_chronicle(self, idx):
-    #     path = filedialog.askopenfilename(filetypes=[('Excel', '*.xlsx *.xls')])
-    #     if not path:
-    #         return
-    #     try:
-    #         df = self._parse_piezo_excel(path)
-    #         w = self.chron_widgets[idx]
-    #         self.chronicles[idx] = {
-    #             'df': df,
-    #             'name': w['name_var'].get().strip() or f'Piézo {idx}',
-    #             'masse_eau': w['masse_var'].get().strip(),
-    #             'path': path,
-    #         }
-    #         w['status_lbl'].config(text=f'✓ chargé ({len(df)} obs.)', foreground='#1a7a1a')
-    #         self._refresh_target_choices()
-    #         self.refresh_chronicles_view()
-    #     except Exception as e:
-    #         messagebox.showerror('Erreur chargement', str(e))
-
     def populate_table(self, df):
         for item in self.table.get_children():
             self.table.delete(item)
@@ -1719,6 +1536,9 @@ class App:
             self.cfg.n_bootstraps = int(self.boot_var.get())
             self.cfg.ets_type     = self.ets_var.get()[0]
             self.set_status('Calcul en cours…', '#a07000')
+            for idx in (1, 2, 3):
+                n_obs = len(self._merged_for_target(idx))
+                print(f"{self.chronicles[idx]['name']} : {n_obs} observations")
 
             v_steps = future_steps(self.freq, self.cfg.validation_years)
             if v_steps >= len(self.df):
@@ -1892,16 +1712,16 @@ class App:
                         f.write(f'# {k},{v:.4f}\n')
             self.set_status('Export CSV terminé.', '#1a7a1a')
             
-    def chronicles_ready(self):
-        loaded = {i: c for i, c in self.chronicles.items() if c is not None}
-        if len(loaded) < 3:
-            return False, f"Il manque {3-len(loaded)} chronique(s) — 3 sont requises."
-        masses = [c['masse_eau'].strip() for c in loaded.values()]
-        if any(not m for m in masses):
-            return False, "Renseignez le code de la masse d'eau ADES pour les 3 chroniques."
-        if len({m.lower() for m in masses}) > 1:
-            return False, "Les 3 chroniques doivent appartenir à la même masse d'eau ADES."
-        return True, f"✓ 3 chroniques prêtes — masse d'eau : {masses[0]}"
+    # def chronicles_ready(self):
+    #     loaded = {i: c for i, c in self.chronicles.items() if c is not None}
+    #     if len(loaded) < 3:
+    #         return False, f"Il manque {3-len(loaded)} chronique(s) — 3 sont requises."
+    #     masses = [c['masse_eau'].strip() for c in loaded.values()]
+    #     if any(not m for m in masses):
+    #         return False, "Renseignez le code de la masse d'eau ADES pour les 3 chroniques."
+    #     if len({m.lower() for m in masses}) > 1:
+    #         return False, "Les 3 chroniques doivent appartenir à la même masse d'eau ADES."
+    #     return True, f"✓ 3 chroniques prêtes — masse d'eau : {masses[0]}"
     
     def refresh_chronicles_view(self):
         ok, msg = self.chronicles_ready()
