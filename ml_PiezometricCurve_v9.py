@@ -320,56 +320,48 @@ class App:
                  font=('Segoe UI', 13, 'bold')).pack(pady=14)
     
         # ── Chroniques ADES (3 requises) ────────────────────────────────────
-        chron_frame = ttk.LabelFrame(sidebar, text="Chroniques ADES (3 requises — même masse d'eau)")
+        chron_frame = ttk.LabelFrame(sidebar, text="Chroniques ADES (3 points — même masse d'eau)")
         chron_frame.pack(fill='x', padx=10, pady=5)
-    
+        
         ttk.Label(chron_frame,
-                  text="Nom/code BSS + code masse d'eau, puis charger chaque fichier Excel (date/niveau).",
+                  text="Fichier Excel unique contenant date / niveau / nom du point (une colonne par point).",
                   wraplength=250, font=('Segoe UI', 8)).pack(fill='x', padx=8, pady=(6, 4))
-    
-        self.chron_widgets = {}
+        
+        ttk.Button(chron_frame, text='📂  Charger fichier ADES',
+                   command=self.load_multi_source).pack(fill='x', padx=8, pady=3)
+        
+        self.source_status_lbl = ttk.Label(chron_frame, text='Aucun fichier chargé.',
+                                            foreground='#cc0000', font=('Segoe UI', 8),
+                                            wraplength=250, justify='left')
+        self.source_status_lbl.pack(fill='x', padx=8, pady=(2, 6))
+        
+        self.point_vars = []
+        self.point_cbs  = []
+        
         for i in (1, 2, 3):
             row = ttk.Frame(chron_frame)
-            row.pack(fill='x', padx=8, pady=3)
-    
-            name_var  = tk.StringVar(value=f'Piézo {i}')
-            masse_var = tk.StringVar(value='')
-    
-            name_entry = ttk.Entry(row, textvariable=name_var, width=10)
-            name_entry.pack(side='left', fill='x', expand=True, padx=(0, 2))
-    
-            masse_entry = ttk.Entry(row, textvariable=masse_var, width=8)
-            masse_entry.pack(side='left', fill='x', expand=True, padx=2)
-    
-            ttk.Button(row, text='📂', width=3,
-                       command=lambda idx=i: self.load_chronicle(idx)).pack(side='left', padx=(2, 0))
-    
-            status_row = ttk.Frame(chron_frame)
-            status_row.pack(fill='x', padx=8, pady=(0, 4))
-            status_lbl = ttk.Label(status_row, text='○ non chargé', foreground='#cc0000',
-                                    font=('Segoe UI', 8))
-            status_lbl.pack(anchor='w')
-    
-            self.chron_widgets[i] = {
-                'name_var': name_var,
-                'masse_var': masse_var,
-                'status_lbl': status_lbl,
-            }
-    
+            row.pack(fill='x', padx=8, pady=2)
+            ttk.Label(row, text=f'Point {i} :', width=8).pack(side='left')
+            pv = tk.StringVar(value='')
+            cb = ttk.Combobox(row, textvariable=pv, state='readonly', values=[])
+            cb.pack(side='left', fill='x', expand=True)
+            cb.bind('<<ComboboxSelected>>', self._on_point_selection_change)
+            self.point_vars.append(pv)
+            self.point_cbs.append(cb)
+        
         target_row = ttk.Frame(chron_frame)
         target_row.pack(fill='x', padx=8, pady=(4, 2))
         ttk.Label(target_row, text='Piézomètre à prévoir :',
                   font=('Segoe UI', 8, 'bold')).pack(anchor='w')
-    
-        self.target_var = tk.StringVar(value='Piézo 1')
+        
+        self.target_var = tk.StringVar(value='')
         self.target_cb = ttk.Combobox(target_row, textvariable=self.target_var,
-                                       state='readonly',
-                                       values=['Piézo 1', 'Piézo 2', 'Piézo 3'])
+                                       state='readonly', values=[])
         self.target_cb.pack(fill='x', pady=(2, 0))
         self.target_cb.bind('<<ComboboxSelected>>', self._on_target_change)
-    
+        
         self.ready_status_lbl = ttk.Label(chron_frame,
-                                           text='3 chroniques requises avant analyse.',
+                                           text='3 points requis avant analyse.',
                                            foreground='#cc0000', font=('Segoe UI', 8),
                                            wraplength=250, justify='left')
         self.ready_status_lbl.pack(fill='x', padx=8, pady=(4, 8))
@@ -695,58 +687,142 @@ class App:
         if self.target_var.get() not in names:
             self.target_var.set(names[0])
             
-    def load_chronicle(self, idx):
+    def _parse_multi_piezo_excel(self, path):
+        df = pd.read_excel(path)
+        if df.shape[1] < 3:
+            raise ValueError("Le fichier doit contenir au moins 3 colonnes : date / niveau / nom du point.")
+        date_col  = self._find_column(df, self.DATE_ALIASES)
+        level_col = self._find_column(df, self.LEVEL_ALIASES)
+        point_col = self._find_column(df, self.POINT_ALIASES)
+        masse_col = self._find_column(df, self.MASSE_EAU_ALIASES)
+        if date_col is None or level_col is None or point_col is None:
+            raise ValueError(
+                f'Colonnes détectées : {list(df.columns)}\n\n'
+                f"Date : {date_col or '❌'}   Niveau : {level_col or '❌'}   Point : {point_col or '❌'}"
+            )
+        cols    = [date_col, level_col, point_col] + ([masse_col] if masse_col else [])
+        names   = ['date', 'level', 'point'] + (['masse_eau'] if masse_col else [])
+        df = df[cols].copy()
+        df.columns = names
+        df['date']  = pd.to_datetime(df['date'], errors='coerce')
+        df['level'] = pd.to_numeric(df['level'], errors='coerce')
+        df['point'] = df['point'].astype(str).str.strip()
+        if 'masse_eau' in df.columns:
+            df['masse_eau'] = df['masse_eau'].astype(str).str.strip()
+        else:
+            df['masse_eau'] = ''
+        df = df.dropna(subset=['date', 'level', 'point']).sort_values(['point', 'date']).reset_index(drop=True)
+        points = sorted(df['point'].unique().tolist())
+        if len(points) < 3:
+            raise ValueError(f"Seuls {len(points)} point(s) distinct(s) détecté(s) — 3 sont requis.")
+        return df, points, (masse_col is not None)
+    
+    def load_multi_source(self):
         path = filedialog.askopenfilename(filetypes=[('Excel', '*.xlsx *.xls')])
         if not path:
             return
         try:
-            df = self._parse_piezo_excel(path)
-            w = self.chron_widgets[idx]
-            self.chronicles[idx] = {
-                'df': df,
-                'name': w['name_var'].get().strip() or f'Piézo {idx}',
-                'masse_eau': w['masse_var'].get().strip(),
-                'path': path,
-            }
-            w['status_lbl'].config(text=f'✓ chargé ({len(df)} obs.)', foreground='#1a7a1a')
-            self._refresh_target_choices()
-            self.refresh_chronicles_view()
+            df, points, has_masse = self._parse_multi_piezo_excel(path)
+            self.source_df = df
+            self.masse_eau_available = has_masse
+            for cb in self.point_cbs:
+                cb['values'] = points
+            for i, pv in enumerate(self.point_vars):
+                pv.set(points[i] if i < len(points) else '')
+            self.source_status_lbl.config(
+                text=f"✓ {len(points)} points détectés dans {Path(path).name}"
+                     + ('' if has_masse else " (⚠ pas de colonne masse d'eau — à vérifier manuellement)"),
+                foreground='#1a7a1a')
+            self._on_point_selection_change()
         except Exception as e:
             messagebox.showerror('Erreur chargement', str(e))
+    
+    def _on_point_selection_change(self, event=None):
+        sel = [pv.get() for pv in self.point_vars]
+        if len(set(sel)) < 3 or any(not s for s in sel):
+            self.chronicles = {1: None, 2: None, 3: None}
+            self.ready_status_lbl.config(text='Sélectionnez 3 points distincts.', foreground='#cc0000')
+            self.run_btn.config(state='disabled')
+            self._plot_network_chronicles()
+            return
+    
+        chronicles = {}
+        for idx, point_name in enumerate(sel, start=1):
+            sub = self.source_df.loc[self.source_df['point'] == point_name, ['date', 'level']] \
+                                 .reset_index(drop=True)
+            if len(sub) < 24:
+                self.chronicles = {1: None, 2: None, 3: None}
+                self.ready_status_lbl.config(
+                    text=f"Point « {point_name} » : {len(sub)} observations valides (min 24).",
+                    foreground='#cc0000')
+                self.run_btn.config(state='disabled')
+                self._plot_network_chronicles()
+                return
+            masse_vals = self.source_df.loc[self.source_df['point'] == point_name, 'masse_eau']
+            chronicles[idx] = {
+                'df': sub,
+                'name': point_name,
+                'masse_eau': masse_vals.iloc[0] if len(masse_vals) else '',
+                'path': None,
+            }
+        self.chronicles = chronicles
+        self._refresh_target_choices()
+        self.refresh_chronicles_view()
             
-    def _parse_piezo_excel(self, path):
-        df = pd.read_excel(path)
-        if df.shape[1] < 2:
-            raise ValueError('Le fichier doit contenir au moins 2 colonnes : date / niveau')
-        date_col  = self._find_column(df, self.DATE_ALIASES)
-        level_col = self._find_column(df, self.LEVEL_ALIASES)
-        if date_col is None or level_col is None:
-            available = list(df.columns)
-            raise ValueError(
-                f'Colonnes détectées : {available}\n\n'
-                f"Colonne date trouvée : {date_col or '❌ NON TROUVÉE'}\n"
-                f"Colonne niveau trouvée : {level_col or '❌ NON TROUVÉE'}\n\n"
-                "Renommez les colonnes en 'date' et 'level' dans votre fichier."
-            )
-        df = df[[date_col, level_col]].copy()
-        df.columns = ['date', 'level']
-        df['date']  = pd.to_datetime(df['date'],  errors='coerce')
-        df['level'] = pd.to_numeric(df['level'], errors='coerce')
-        df = df.dropna().sort_values('date').reset_index(drop=True)
-        if len(df) < 24:
-            raise ValueError(f'Données insuffisantes : {len(df)} observations valides (min 24).')
-        return df
+    # def load_chronicle(self, idx):
+    #     path = filedialog.askopenfilename(filetypes=[('Excel', '*.xlsx *.xls')])
+    #     if not path:
+    #         return
+    #     try:
+    #         df = self._parse_piezo_excel(path)
+    #         w = self.chron_widgets[idx]
+    #         self.chronicles[idx] = {
+    #             'df': df,
+    #             'name': w['name_var'].get().strip() or f'Piézo {idx}',
+    #             'masse_eau': w['masse_var'].get().strip(),
+    #             'path': path,
+    #         }
+    #         w['status_lbl'].config(text=f'✓ chargé ({len(df)} obs.)', foreground='#1a7a1a')
+    #         self._refresh_target_choices()
+    #         self.refresh_chronicles_view()
+    #     except Exception as e:
+    #         messagebox.showerror('Erreur chargement', str(e))
+            
+    # def _parse_piezo_excel(self, path):
+    #     df = pd.read_excel(path)
+    #     if df.shape[1] < 2:
+    #         raise ValueError('Le fichier doit contenir au moins 2 colonnes : date / niveau')
+    #     date_col  = self._find_column(df, self.DATE_ALIASES)
+    #     level_col = self._find_column(df, self.LEVEL_ALIASES)
+    #     if date_col is None or level_col is None:
+    #         available = list(df.columns)
+    #         raise ValueError(
+    #             f'Colonnes détectées : {available}\n\n'
+    #             f"Colonne date trouvée : {date_col or '❌ NON TROUVÉE'}\n"
+    #             f"Colonne niveau trouvée : {level_col or '❌ NON TROUVÉE'}\n\n"
+    #             "Renommez les colonnes en 'date' et 'level' dans votre fichier."
+    #         )
+    #     df = df[[date_col, level_col]].copy()
+    #     df.columns = ['date', 'level']
+    #     df['date']  = pd.to_datetime(df['date'],  errors='coerce')
+    #     df['level'] = pd.to_numeric(df['level'], errors='coerce')
+    #     df = df.dropna().sort_values('date').reset_index(drop=True)
+    #     if len(df) < 24:
+    #         raise ValueError(f'Données insuffisantes : {len(df)} observations valides (min 24).')
+    #     return df
     
     def chronicles_ready(self):
         loaded = {i: c for i, c in self.chronicles.items() if c is not None}
         if len(loaded) < 3:
-            return False, f"Il manque {3 - len(loaded)} chronique(s) — 3 sont requises."
+            return False, f"Il manque {3 - len(loaded)} point(s) — 3 sont requis."
+        if not getattr(self, 'masse_eau_available', False):
+            return True, "✓ 3 points prêts (masse d'eau non renseignée dans le fichier — à vérifier manuellement)."
         masses = [c['masse_eau'].strip() for c in loaded.values()]
         if any(not m for m in masses):
-            return False, "Renseignez le code de la masse d'eau ADES pour les 3 chroniques."
+            return False, "Code masse d'eau manquant pour un ou plusieurs points."
         if len({m.lower() for m in masses}) > 1:
-            return False, "Les 3 chroniques doivent appartenir à la même masse d'eau ADES."
-        return True, f"✓ 3 chroniques prêtes — masse d'eau : {masses[0]}"
+            return False, f"Points issus de masses d'eau différentes : {sorted(set(masses))}."
+        return True, f"✓ 3 points prêts — masse d'eau : {masses[0]}"
     
     def refresh_chronicles_view(self):
         ok, msg = self.chronicles_ready()
@@ -1421,10 +1497,22 @@ class App:
         self.status.config(text=txt, fg=color)
         self.root.update_idletasks()
 
+    POINT_ALIASES = [
+        'identifiant national bss', 'ancien code national bss',
+        'nom point', 'point', 'code bss', 'nom_ouvrage', 'ouvrage',
+        'piezometre', 'piézomètre', 'code point', 'nom_point', 'nom du point',
+    ]
+    
+    MASSE_EAU_ALIASES = [
+    "masse d'eau", 'masse deau', 'code masse eau',
+    'masse_eau', 'code_masse_eau',
+    ]
+
     DATE_ALIASES = [
         'date de la mesure', 'date_mesure', 'date mesure', 'date',
         'datetime', 'horodatage', 'timestamp',
     ]
+    
     LEVEL_ALIASES = [
         'côte ngf', 'cote ngf', 'niveau ngf', 'niveau', 'level',
         'profondeur/repère de mesure', 'profondeur relative/repère de mesure',
@@ -1438,65 +1526,22 @@ class App:
                 return cols_lower[alias]
         return None
 
-    def load_chronicle(self, idx):
-        path = filedialog.askopenfilename(filetypes=[('Excel', '*.xlsx *.xls')])
-        if not path:
-            return
-        try:
-            df = self._parse_piezo_excel(path)
-            w = self.chron_widgets[idx]
-            self.chronicles[idx] = {
-                'df': df,
-                'name': w['name_var'].get().strip() or f'Piézo {idx}',
-                'masse_eau': w['masse_var'].get().strip(),
-                'path': path,
-            }
-            w['status_lbl'].config(text=f'✓ chargé ({len(df)} obs.)', foreground='#1a7a1a')
-            self._refresh_target_choices()
-            self.refresh_chronicles_view()
-        except Exception as e:
-            messagebox.showerror('Erreur chargement', str(e))
-
-
-    # def load_file(self):
-    #     path = filedialog.askopenfilename(
-    #         filetypes=[('Excel', '*.xlsx *.xls')])
+    # def load_chronicle(self, idx):
+    #     path = filedialog.askopenfilename(filetypes=[('Excel', '*.xlsx *.xls')])
     #     if not path:
     #         return
     #     try:
-    #         df = pd.read_excel(path)
-    #         if df.shape[1] < 2:
-    #             raise ValueError(
-    #                 'Le fichier doit contenir au moins 2 colonnes : date / niveau')
-    #         date_col  = self._find_column(df, self.DATE_ALIASES)
-    #         level_col = self._find_column(df, self.LEVEL_ALIASES)
-    #         if date_col is None or level_col is None:
-    #             available = list(df.columns)
-    #             msg = (
-    #                 f'Colonnes détectées : {available}\n\n'
-    #                 f"Colonne date trouvée : {date_col or '❌ NON TROUVÉE'}\n"
-    #                 f"Colonne niveau trouvée : {level_col or '❌ NON TROUVÉE'}\n\n"
-    #                 "Renommez les colonnes en 'date' et 'level' dans votre fichier."
-    #             )
-    #             raise ValueError(msg)
-    #         df = df[[date_col, level_col]].copy()
-    #         df.columns = ['date', 'level']
-    #         df['date']  = pd.to_datetime(df['date'],  errors='coerce')
-    #         df['level'] = pd.to_numeric(df['level'], errors='coerce')
-    #         df = df.dropna().sort_values('date').reset_index(drop=True)
-    #         if len(df) < 24:
-    #             raise ValueError(
-    #                 f'Données insuffisantes : {len(df)} observations valides (min 24).')
-    #         self.df = df
-    #         self.cfg.file_path = path
-    #         self.freq = detect_frequency(df['date'])
-    #         freq_names = {'D': 'Journalier', 'W': 'Hebdomadaire',
-    #                       'MS': 'Mensuel', 'QS': 'Trimestriel', 'YS': 'Annuel'}
-    #         self.freq_label.config(
-    #             text=f'Fréquence détectée : {freq_names.get(self.freq, self.freq)}'
-    #                  f' — {len(df)} observations')
-    #         self.populate_table(df)
-    #         self.set_status(f'Chargé : {Path(path).name}', '#1a7a1a')
+    #         df = self._parse_piezo_excel(path)
+    #         w = self.chron_widgets[idx]
+    #         self.chronicles[idx] = {
+    #             'df': df,
+    #             'name': w['name_var'].get().strip() or f'Piézo {idx}',
+    #             'masse_eau': w['masse_var'].get().strip(),
+    #             'path': path,
+    #         }
+    #         w['status_lbl'].config(text=f'✓ chargé ({len(df)} obs.)', foreground='#1a7a1a')
+    #         self._refresh_target_choices()
+    #         self.refresh_chronicles_view()
     #     except Exception as e:
     #         messagebox.showerror('Erreur chargement', str(e))
 
