@@ -81,6 +81,13 @@ def detect_frequency(dates: pd.Series) -> str:
     else:                    return 'YS'
 
 
+def align_chronicle(df_source, target_dates):
+    s = df_source.set_index('date')['level'].sort_index()
+    idx = pd.DatetimeIndex(pd.to_datetime(target_dates))
+    combined = s.index.union(idx)
+    s_full = s.reindex(combined).astype(float).interpolate(method='time', limit_direction='both')
+    return s_full.reindex(idx).values
+
 def freq_to_seasonal_periods(freq: str) -> int:
     return {'D': 365, 'W': 52, 'MS': 12, 'QS': 4, 'YS': 1}.get(freq, 12)
 
@@ -266,7 +273,10 @@ class App:
         self.root.title(APP_TITLE)
         self.root.geometry(APP_SIZE)
         self.root.minsize(1100, 750)
-        self.df      = None
+        #self.df      = None
+        self.chronicles = {1: None, 2: None, 3: None}
+        self.target_idx = 1
+        self.df = None
         self.pred_df = None
         self.cfg     = Config()
         self.freq    = 'MS'
@@ -289,39 +299,95 @@ class App:
         self.build_ui()
 
     # ── UI ──────────────────────────────────────────────────────────────────────
-
     def build_ui(self):
         self.root.columnconfigure(1, weight=1)
         self.root.rowconfigure(0, weight=1)
-
+    
         # ── Sidebar ──────────────────────────────────────────────────────────
         sidebar = tk.Frame(self.root, bg='#1f2d3d', width=290)
         sidebar.grid(row=0, column=0, sticky='nswe')
         sidebar.grid_propagate(False)
-
+    
         main = tk.Frame(self.root, bg='#f5f6fa')
         main.grid(row=0, column=1, sticky='nswe')
         main.rowconfigure(1, weight=1)
         main.columnconfigure(0, weight=1)
+        
         self.main = main
-
+    
         tk.Label(sidebar, text='Expert Piézométrie Pro',
                  fg='white', bg='#1f2d3d',
                  font=('Segoe UI', 13, 'bold')).pack(pady=14)
-
-        ttk.Button(sidebar, text='📂  Charger Excel',
-                   command=self.load_file).pack(fill='x', padx=14, pady=3)
-        ttk.Button(sidebar, text='▶  Lancer Analyse',
-                   command=self.run_analysis).pack(fill='x', padx=14, pady=3)
+    
+        # ── Chroniques ADES (3 requises) ────────────────────────────────────
+        chron_frame = ttk.LabelFrame(sidebar, text="Chroniques ADES (3 requises — même masse d'eau)")
+        chron_frame.pack(fill='x', padx=10, pady=5)
+    
+        ttk.Label(chron_frame,
+                  text="Nom/code BSS + code masse d'eau, puis charger chaque fichier Excel (date/niveau).",
+                  wraplength=250, font=('Segoe UI', 8)).pack(fill='x', padx=8, pady=(6, 4))
+    
+        self.chron_widgets = {}
+        for i in (1, 2, 3):
+            row = ttk.Frame(chron_frame)
+            row.pack(fill='x', padx=8, pady=3)
+    
+            name_var  = tk.StringVar(value=f'Piézo {i}')
+            masse_var = tk.StringVar(value='')
+    
+            name_entry = ttk.Entry(row, textvariable=name_var, width=10)
+            name_entry.pack(side='left', fill='x', expand=True, padx=(0, 2))
+    
+            masse_entry = ttk.Entry(row, textvariable=masse_var, width=8)
+            masse_entry.pack(side='left', fill='x', expand=True, padx=2)
+    
+            ttk.Button(row, text='📂', width=3,
+                       command=lambda idx=i: self.load_chronicle(idx)).pack(side='left', padx=(2, 0))
+    
+            status_row = ttk.Frame(chron_frame)
+            status_row.pack(fill='x', padx=8, pady=(0, 4))
+            status_lbl = ttk.Label(status_row, text='○ non chargé', foreground='#cc0000',
+                                    font=('Segoe UI', 8))
+            status_lbl.pack(anchor='w')
+    
+            self.chron_widgets[i] = {
+                'name_var': name_var,
+                'masse_var': masse_var,
+                'status_lbl': status_lbl,
+            }
+    
+        target_row = ttk.Frame(chron_frame)
+        target_row.pack(fill='x', padx=8, pady=(4, 2))
+        ttk.Label(target_row, text='Piézomètre à prévoir :',
+                  font=('Segoe UI', 8, 'bold')).pack(anchor='w')
+    
+        self.target_var = tk.StringVar(value='Piézo 1')
+        self.target_cb = ttk.Combobox(target_row, textvariable=self.target_var,
+                                       state='readonly',
+                                       values=['Piézo 1', 'Piézo 2', 'Piézo 3'])
+        self.target_cb.pack(fill='x', pady=(2, 0))
+        self.target_cb.bind('<<ComboboxSelected>>', self._on_target_change)
+    
+        self.ready_status_lbl = ttk.Label(chron_frame,
+                                           text='3 chroniques requises avant analyse.',
+                                           foreground='#cc0000', font=('Segoe UI', 8),
+                                           wraplength=250, justify='left')
+        self.ready_status_lbl.pack(fill='x', padx=8, pady=(4, 8))
+    
+        # ── Actions ──────────────────────────────────────────────────────────
+        self.run_btn = ttk.Button(sidebar, text='▶  Lancer Analyse',
+                                   command=self.run_analysis, state='disabled')
+        self.run_btn.pack(fill='x', padx=14, pady=3)
+    
         ttk.Button(sidebar, text='💾  Exporter CSV',
                    command=self.export_csv).pack(fill='x', padx=14, pady=3)
         ttk.Button(sidebar, text='✕  Quitter',
                    command=self.root.destroy).pack(fill='x', padx=14, pady=10)
-
+    
         # ── Paramètres modèle
         params = ttk.LabelFrame(sidebar, text='Paramètres modèle')
         params.pack(fill='x', padx=10, pady=5)
-
+    
         self.model_var = tk.StringVar(value='ETS')
         ttk.Label(params, text='Modèle').pack(anchor='w', padx=8, pady=(6, 0))
         model_cb = ttk.Combobox(params, textvariable=self.model_var,
@@ -329,7 +395,12 @@ class App:
                                 state='readonly')
         model_cb.pack(fill='x', padx=8, pady=3)
         model_cb.bind('<<ComboboxSelected>>', self._on_model_change)
-
+    
+        ttk.Label(params,
+                  text="ETS = univarié (chronique cible seule).\nARIMA/RandomForest/XGBoost exploitent les 3 chroniques.",
+                  foreground='#888', font=('Segoe UI', 7), wraplength=250,
+                  justify='left').pack(fill='x', padx=8, pady=(0, 4))
+    
         self.ets_frame = ttk.Frame(params)
         self.ets_frame.pack(fill='x')
         self.ets_var = tk.StringVar(value='4')
@@ -338,58 +409,58 @@ class App:
                      values=['1 - Simple', '2 - Tendance',
                              '3 - Saisonnier', '4 - Complet'],
                      state='readonly').pack(fill='x', padx=8, pady=3)
-
+    
         self.future_var = tk.IntVar(value=5)
         ttk.Label(params, text='Années futures').pack(anchor='w', padx=8)
         ttk.Entry(params, textvariable=self.future_var).pack(fill='x', padx=8, pady=3)
-
+    
         self.val_var = tk.IntVar(value=20)
         ttk.Label(params, text='Années validation').pack(anchor='w', padx=8)
         ttk.Entry(params, textvariable=self.val_var).pack(fill='x', padx=8, pady=3)
-
+    
         # ── Injection Maîtrisée
         recharge_frame = ttk.LabelFrame(sidebar, text='Injection Maîtrisée')
         recharge_frame.pack(fill='x', padx=10, pady=5)
-
+    
         self.thick_var = tk.DoubleVar(value=10.0)
         ttk.Label(recharge_frame, text="Épaisseur Aquifère (m)").pack(anchor='w', padx=8, pady=(4, 0))
         ttk.Entry(recharge_frame, textvariable=self.thick_var).pack(fill='x', padx=8, pady=2)
-
+    
         self.recharge_var = tk.DoubleVar(value=0.0)
         ttk.Label(recharge_frame, text='Débit injecté (m³/jour)').pack(anchor='w', padx=8, pady=(4, 0))
         ttk.Entry(recharge_frame, textvariable=self.recharge_var).pack(fill='x', padx=8, pady=2)
-
+    
         self.s_coeff_var = tk.DoubleVar(value=0.05)
         ttk.Label(recharge_frame, text='Coeff. Emmagasinement (S)').pack(anchor='w', padx=8, pady=(4, 0))
         ttk.Entry(recharge_frame, textvariable=self.s_coeff_var).pack(fill='x', padx=8, pady=2)
-
+    
         self.area_var = tk.DoubleVar(value=100.0)
         ttk.Label(recharge_frame, text="Surface de l'ouvrage (m²)").pack(anchor='w', padx=8, pady=(4, 0))
         ttk.Entry(recharge_frame, textvariable=self.area_var).pack(fill='x', padx=8, pady=2)
-
+    
         self.dist_var = tk.DoubleVar(value=50.0)
         ttk.Label(recharge_frame, text='Distance piézo/ouvrage (m)').pack(anchor='w', padx=8, pady=(4, 0))
         ttk.Entry(recharge_frame, textvariable=self.dist_var).pack(fill='x', padx=8, pady=2)
-
+    
         self.k_var = tk.DoubleVar(value=0.0001)
         ttk.Label(recharge_frame, text='Perméabilité K (m/s)').pack(anchor='w', padx=8, pady=(4, 0))
         ttk.Entry(recharge_frame, textvariable=self.k_var).pack(fill='x', padx=8, pady=(2, 6))
-
+    
         ttk.Button(recharge_frame, text="🎯 Caler sur l'historique",
                    command=self.calibrate_hydro_parameters).pack(fill='x', padx=8, pady=6)
-
+    
         # ── Intervalle de confiance
         ci_frame = ttk.LabelFrame(sidebar, text='Intervalle de confiance')
         ci_frame.pack(fill='x', padx=10, pady=5)
-
+    
         self.ci_var = tk.DoubleVar(value=68.0)
         ttk.Label(ci_frame, text='Niveau (%)').pack(anchor='w', padx=8, pady=(5, 0))
         ttk.Entry(ci_frame, textvariable=self.ci_var).pack(fill='x', padx=8, pady=3)
-
+    
         self.boot_var = tk.IntVar(value=200)
         ttk.Label(ci_frame, text='Bootstraps (RF/XGB)').pack(anchor='w', padx=8)
         ttk.Entry(ci_frame, textvariable=self.boot_var).pack(fill='x', padx=8, pady=3)
-
+    
         # ── Métriques
         self.metrics_frame = ttk.LabelFrame(sidebar, text='Métriques validation')
         self.metrics_frame.pack(fill='x', padx=10, pady=5)
@@ -403,30 +474,35 @@ class App:
                            font=('Consolas', 10, 'bold'), bg='#f0f0f0')
             lbl.pack(side='left')
             self.metrics_labels[key] = lbl
-
+    
         # ── Status bar
         top = tk.Frame(main, bg='#f5f6fa')
         top.grid(row=0, column=0, sticky='ew')
-        self.status = tk.Label(top, text='Prêt — chargez un fichier Excel',
+        self.status = tk.Label(top, text='Prêt — chargez les 3 chroniques piézométriques (ADES)',
                                bg='#f5f6fa', fg='#555',
                                font=('Consolas', 10))
         self.status.pack(anchor='w', padx=15, pady=8)
         self.freq_label = tk.Label(top, text='', bg='#f5f6fa', fg='#888',
                                    font=('Consolas', 9))
         self.freq_label.pack(anchor='w', padx=15)
-
+    
         # ── Notebook Onglets
         self.nb = ttk.Notebook(main)
         self.nb.grid(row=1, column=0, sticky='nswe', padx=10, pady=8)
-
-        # Onglet 1 : tableau + graphique principal
+    
+        # Onglet 1 : Réseau piézométrique (3 chroniques)
+        self.tab_network = tk.Frame(self.nb, bg='white')
+        self.nb.add(self.tab_network, text='🌊  Réseau Piézo')
+        self._build_network_tab()
+    
+        # Onglet 2 : tableau + graphique principal
         self.tab_main = tk.Frame(self.nb, bg='white')
         self.nb.add(self.tab_main, text='📊  Analyse')
         self.tab_main.rowconfigure(0, weight=1)
         self.tab_main.columnconfigure(0, weight=1)
-
+    
         self.content = self.tab_main   # compatibilité avec show_plot
-
+    
         self.table = ttk.Treeview(self.tab_main,
                                   columns=('date', 'level'), show='headings')
         self.table.heading('date',  text='Date')
@@ -438,17 +514,312 @@ class App:
                            command=self.table.yview)
         sb.grid(row=0, column=1, sticky='ns')
         self.table.configure(yscrollcommand=sb.set)
-
-        # Onglet 2 : Digital Twin
+    
+        # Onglet 3 : Digital Twin
         self.tab_dt = tk.Frame(self.nb, bg=DT_BG)
         self.nb.add(self.tab_dt, text='🌐  Digital Twin')
         self._build_digital_twin_tab()
+    
+    # def build_ui(self):
+    #     self.root.columnconfigure(1, weight=1)
+    #     self.root.rowconfigure(0, weight=1)
+
+    #     # ── Sidebar ──────────────────────────────────────────────────────────
+    #     sidebar = tk.Frame(self.root, bg='#1f2d3d', width=290)
+    #     sidebar.grid(row=0, column=0, sticky='nswe')
+    #     sidebar.grid_propagate(False)
+
+    #     main = tk.Frame(self.root, bg='#f5f6fa')
+    #     main.grid(row=0, column=1, sticky='nswe')
+    #     main.rowconfigure(1, weight=1)
+    #     main.columnconfigure(0, weight=1)
+    #     self.main = main
+
+    #     tk.Label(sidebar, text='Expert Piézométrie Pro',
+    #              fg='white', bg='#1f2d3d',
+    #              font=('Segoe UI', 13, 'bold')).pack(pady=14)
+
+    #     ttk.Button(sidebar, text='📂  Charger Excel',
+    #                command=self.load_file).pack(fill='x', padx=14, pady=3)
+    #     ttk.Button(sidebar, text='▶  Lancer Analyse',
+    #                command=self.run_analysis).pack(fill='x', padx=14, pady=3)
+    #     ttk.Button(sidebar, text='💾  Exporter CSV',
+    #                command=self.export_csv).pack(fill='x', padx=14, pady=3)
+    #     ttk.Button(sidebar, text='✕  Quitter',
+    #                command=self.root.destroy).pack(fill='x', padx=14, pady=10)
+
+    #     # ── Paramètres modèle
+    #     params = ttk.LabelFrame(sidebar, text='Paramètres modèle')
+    #     params.pack(fill='x', padx=10, pady=5)
+
+    #     self.model_var = tk.StringVar(value='ETS')
+    #     ttk.Label(params, text='Modèle').pack(anchor='w', padx=8, pady=(6, 0))
+    #     model_cb = ttk.Combobox(params, textvariable=self.model_var,
+    #                             values=['ETS', 'ARIMA', 'RandomForest', 'XGBoost'],
+    #                             state='readonly')
+    #     model_cb.pack(fill='x', padx=8, pady=3)
+    #     model_cb.bind('<<ComboboxSelected>>', self._on_model_change)
+
+    #     self.ets_frame = ttk.Frame(params)
+    #     self.ets_frame.pack(fill='x')
+    #     self.ets_var = tk.StringVar(value='4')
+    #     ttk.Label(self.ets_frame, text='Type ETS').pack(anchor='w', padx=8)
+    #     ttk.Combobox(self.ets_frame, textvariable=self.ets_var,
+    #                  values=['1 - Simple', '2 - Tendance',
+    #                          '3 - Saisonnier', '4 - Complet'],
+    #                  state='readonly').pack(fill='x', padx=8, pady=3)
+
+    #     self.future_var = tk.IntVar(value=5)
+    #     ttk.Label(params, text='Années futures').pack(anchor='w', padx=8)
+    #     ttk.Entry(params, textvariable=self.future_var).pack(fill='x', padx=8, pady=3)
+
+    #     self.val_var = tk.IntVar(value=20)
+    #     ttk.Label(params, text='Années validation').pack(anchor='w', padx=8)
+    #     ttk.Entry(params, textvariable=self.val_var).pack(fill='x', padx=8, pady=3)
+
+    #     # ── Injection Maîtrisée
+    #     recharge_frame = ttk.LabelFrame(sidebar, text='Injection Maîtrisée')
+    #     recharge_frame.pack(fill='x', padx=10, pady=5)
+
+    #     self.thick_var = tk.DoubleVar(value=10.0)
+    #     ttk.Label(recharge_frame, text="Épaisseur Aquifère (m)").pack(anchor='w', padx=8, pady=(4, 0))
+    #     ttk.Entry(recharge_frame, textvariable=self.thick_var).pack(fill='x', padx=8, pady=2)
+
+    #     self.recharge_var = tk.DoubleVar(value=0.0)
+    #     ttk.Label(recharge_frame, text='Débit injecté (m³/jour)').pack(anchor='w', padx=8, pady=(4, 0))
+    #     ttk.Entry(recharge_frame, textvariable=self.recharge_var).pack(fill='x', padx=8, pady=2)
+
+    #     self.s_coeff_var = tk.DoubleVar(value=0.05)
+    #     ttk.Label(recharge_frame, text='Coeff. Emmagasinement (S)').pack(anchor='w', padx=8, pady=(4, 0))
+    #     ttk.Entry(recharge_frame, textvariable=self.s_coeff_var).pack(fill='x', padx=8, pady=2)
+
+    #     self.area_var = tk.DoubleVar(value=100.0)
+    #     ttk.Label(recharge_frame, text="Surface de l'ouvrage (m²)").pack(anchor='w', padx=8, pady=(4, 0))
+    #     ttk.Entry(recharge_frame, textvariable=self.area_var).pack(fill='x', padx=8, pady=2)
+
+    #     self.dist_var = tk.DoubleVar(value=50.0)
+    #     ttk.Label(recharge_frame, text='Distance piézo/ouvrage (m)').pack(anchor='w', padx=8, pady=(4, 0))
+    #     ttk.Entry(recharge_frame, textvariable=self.dist_var).pack(fill='x', padx=8, pady=2)
+
+    #     self.k_var = tk.DoubleVar(value=0.0001)
+    #     ttk.Label(recharge_frame, text='Perméabilité K (m/s)').pack(anchor='w', padx=8, pady=(4, 0))
+    #     ttk.Entry(recharge_frame, textvariable=self.k_var).pack(fill='x', padx=8, pady=(2, 6))
+
+    #     ttk.Button(recharge_frame, text="🎯 Caler sur l'historique",
+    #                command=self.calibrate_hydro_parameters).pack(fill='x', padx=8, pady=6)
+
+    #     # ── Intervalle de confiance
+    #     ci_frame = ttk.LabelFrame(sidebar, text='Intervalle de confiance')
+    #     ci_frame.pack(fill='x', padx=10, pady=5)
+
+    #     self.ci_var = tk.DoubleVar(value=68.0)
+    #     ttk.Label(ci_frame, text='Niveau (%)').pack(anchor='w', padx=8, pady=(5, 0))
+    #     ttk.Entry(ci_frame, textvariable=self.ci_var).pack(fill='x', padx=8, pady=3)
+
+    #     self.boot_var = tk.IntVar(value=200)
+    #     ttk.Label(ci_frame, text='Bootstraps (RF/XGB)').pack(anchor='w', padx=8)
+    #     ttk.Entry(ci_frame, textvariable=self.boot_var).pack(fill='x', padx=8, pady=3)
+
+    #     # ── Métriques
+    #     self.metrics_frame = ttk.LabelFrame(sidebar, text='Métriques validation')
+    #     self.metrics_frame.pack(fill='x', padx=10, pady=5)
+    #     self.metrics_labels = {}
+    #     for key in ('MAE', 'RMSE', 'MAPE'):
+    #         row = tk.Frame(self.metrics_frame, bg='#f0f0f0')
+    #         row.pack(fill='x', padx=6, pady=2)
+    #         tk.Label(row, text=f'{key}:', width=6, anchor='w',
+    #                  bg='#f0f0f0').pack(side='left')
+    #         lbl = tk.Label(row, text='—', fg='#1a6ea8',
+    #                        font=('Consolas', 10, 'bold'), bg='#f0f0f0')
+    #         lbl.pack(side='left')
+    #         self.metrics_labels[key] = lbl
+
+    #     # ── Status bar
+    #     top = tk.Frame(main, bg='#f5f6fa')
+    #     top.grid(row=0, column=0, sticky='ew')
+    #     self.status = tk.Label(top, text='Prêt — chargez un fichier Excel',
+    #                            bg='#f5f6fa', fg='#555',
+    #                            font=('Consolas', 10))
+    #     self.status.pack(anchor='w', padx=15, pady=8)
+    #     self.freq_label = tk.Label(top, text='', bg='#f5f6fa', fg='#888',
+    #                                font=('Consolas', 9))
+    #     self.freq_label.pack(anchor='w', padx=15)
+
+    #     # ── Notebook Onglets
+    #     self.nb = ttk.Notebook(main)
+    #     self.nb.grid(row=1, column=0, sticky='nswe', padx=10, pady=8)
+
+    #     # Onglet 1 : tableau + graphique principal
+    #     self.tab_main = tk.Frame(self.nb, bg='white')
+    #     self.nb.add(self.tab_main, text='📊  Analyse')
+    #     self.tab_main.rowconfigure(0, weight=1)
+    #     self.tab_main.columnconfigure(0, weight=1)
+
+    #     self.content = self.tab_main   # compatibilité avec show_plot
+
+    #     self.table = ttk.Treeview(self.tab_main,
+    #                               columns=('date', 'level'), show='headings')
+    #     self.table.heading('date',  text='Date')
+    #     self.table.heading('level', text='Niveau (m)')
+    #     self.table.column('date',  width=160)
+    #     self.table.column('level', width=120)
+    #     self.table.grid(row=0, column=0, sticky='nswe')
+    #     sb = ttk.Scrollbar(self.tab_main, orient='vertical',
+    #                        command=self.table.yview)
+    #     sb.grid(row=0, column=1, sticky='ns')
+    #     self.table.configure(yscrollcommand=sb.set)
+
+    #     # Onglet 2 : Digital Twin
+    #     self.tab_dt = tk.Frame(self.nb, bg=DT_BG)
+    #     self.nb.add(self.tab_dt, text='🌐  Digital Twin')
+    #     self._build_digital_twin_tab()
 
     def _on_model_change(self, _event=None):
         if self.model_var.get() == 'ETS':
             self.ets_frame.pack(fill='x')
         else:
             self.ets_frame.pack_forget()
+
+    def _on_target_change(self, event=None):
+        names = list(self.target_cb['values'])
+        idx = names.index(self.target_var.get()) + 1
+        self.target_idx = idx
+        self.refresh_chronicles_view()
+        
+    def _refresh_target_choices(self):
+        names = [
+            self.chronicles[i]['name'] if self.chronicles[i] else f'Piézo {i}'
+            for i in (1, 2, 3)
+        ]
+        self.target_cb['values'] = names
+        if self.target_var.get() not in names:
+            self.target_var.set(names[0])
+            
+    def load_chronicle(self, idx):
+        path = filedialog.askopenfilename(filetypes=[('Excel', '*.xlsx *.xls')])
+        if not path:
+            return
+        try:
+            df = self._parse_piezo_excel(path)
+            w = self.chron_widgets[idx]
+            self.chronicles[idx] = {
+                'df': df,
+                'name': w['name_var'].get().strip() or f'Piézo {idx}',
+                'masse_eau': w['masse_var'].get().strip(),
+                'path': path,
+            }
+            w['status_lbl'].config(text=f'✓ chargé ({len(df)} obs.)', foreground='#1a7a1a')
+            self._refresh_target_choices()
+            self.refresh_chronicles_view()
+        except Exception as e:
+            messagebox.showerror('Erreur chargement', str(e))
+            
+    def _parse_piezo_excel(self, path):
+        df = pd.read_excel(path)
+        if df.shape[1] < 2:
+            raise ValueError('Le fichier doit contenir au moins 2 colonnes : date / niveau')
+        date_col  = self._find_column(df, self.DATE_ALIASES)
+        level_col = self._find_column(df, self.LEVEL_ALIASES)
+        if date_col is None or level_col is None:
+            available = list(df.columns)
+            raise ValueError(
+                f'Colonnes détectées : {available}\n\n'
+                f"Colonne date trouvée : {date_col or '❌ NON TROUVÉE'}\n"
+                f"Colonne niveau trouvée : {level_col or '❌ NON TROUVÉE'}\n\n"
+                "Renommez les colonnes en 'date' et 'level' dans votre fichier."
+            )
+        df = df[[date_col, level_col]].copy()
+        df.columns = ['date', 'level']
+        df['date']  = pd.to_datetime(df['date'],  errors='coerce')
+        df['level'] = pd.to_numeric(df['level'], errors='coerce')
+        df = df.dropna().sort_values('date').reset_index(drop=True)
+        if len(df) < 24:
+            raise ValueError(f'Données insuffisantes : {len(df)} observations valides (min 24).')
+        return df
+    
+    def chronicles_ready(self):
+        loaded = {i: c for i, c in self.chronicles.items() if c is not None}
+        if len(loaded) < 3:
+            return False, f"Il manque {3 - len(loaded)} chronique(s) — 3 sont requises."
+        masses = [c['masse_eau'].strip() for c in loaded.values()]
+        if any(not m for m in masses):
+            return False, "Renseignez le code de la masse d'eau ADES pour les 3 chroniques."
+        if len({m.lower() for m in masses}) > 1:
+            return False, "Les 3 chroniques doivent appartenir à la même masse d'eau ADES."
+        return True, f"✓ 3 chroniques prêtes — masse d'eau : {masses[0]}"
+    
+    def refresh_chronicles_view(self):
+        ok, msg = self.chronicles_ready()
+        self.ready_status_lbl.config(text=msg, foreground=('#1a7a1a' if ok else '#cc0000'))
+        self.run_btn.config(state='normal' if ok else 'disabled')
+        self._plot_network_chronicles()
+        if ok:
+            self._build_merged_dataset()
+    
+    def _build_merged_dataset(self):
+        target = self.chronicles[self.target_idx]['df'].copy()
+        self.freq = detect_frequency(target['date'])
+        merged = target.copy()
+        j = 1
+        for i in (1, 2, 3):
+            if i == self.target_idx:
+                continue
+            merged[f'level_aux{j}'] = align_chronicle(self.chronicles[i]['df'], merged['date'])
+            j += 1
+        self.df = merged
+        freq_names = {'D': 'Journalier', 'W': 'Hebdomadaire',
+                      'MS': 'Mensuel', 'QS': 'Trimestriel', 'YS': 'Annuel'}
+        self.freq_label.config(
+            text=f'Fréquence détectée : {freq_names.get(self.freq, self.freq)}'
+                 f' — {len(target)} observations (cible : {self.chronicles[self.target_idx]["name"]})')
+        self.populate_table(target)
+        self.set_status('Chroniques prêtes — analyse disponible.', '#1a7a1a')
+    
+    def _build_network_tab(self):
+        tab = self.tab_network
+        tab.rowconfigure(1, weight=1)
+        tab.columnconfigure(0, weight=1)
+        header = tk.Frame(tab, bg='white')
+        header.grid(row=0, column=0, sticky='ew')
+        tk.Label(header, text="Réseau de 3 chroniques piézométriques ADES (même masse d'eau)",
+                 font=('Segoe UI', 11, 'bold'), bg='white').pack(anchor='w', padx=10, pady=8)
+        self.network_plot_frame = tk.Frame(tab, bg='white')
+        self.network_plot_frame.grid(row=1, column=0, sticky='nswe')
+        self.network_plot_frame.rowconfigure(0, weight=1)
+        self.network_plot_frame.columnconfigure(0, weight=1)
+        self._plot_network_chronicles()
+    
+    def _plot_network_chronicles(self):
+        for w in self.network_plot_frame.winfo_children():
+            w.destroy()
+        loaded = {i: c for i, c in self.chronicles.items() if c is not None}
+        if not loaded:
+            tk.Label(self.network_plot_frame,
+                     text="Chargez les 3 chroniques piézométriques (panneau de gauche) pour afficher le réseau.",
+                     bg='white', fg='#888', font=('Segoe UI', 10)).grid(row=0, column=0, pady=40)
+            return
+        plt.close('all')
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6.5), dpi=95, facecolor='white')
+        colors = {1: '#2c7be5', 2: '#e85d04', 3: '#20c997'}
+        for i, c in loaded.items():
+            df = c['df']
+            ax1.plot(df['date'], df['level'], color=colors[i], linewidth=1.4,
+                      label=f"{c['name']} (masse d'eau : {c['masse_eau'] or '—'})")
+            z = (df['level'] - df['level'].mean()) / (df['level'].std() or 1)
+            ax2.plot(df['date'], z, color=colors[i], linewidth=1.2, label=c['name'])
+        ax1.set_title('Chroniques piézométriques brutes', fontsize=11, fontweight='bold')
+        ax1.set_ylabel('Niveau (m)')
+        ax1.legend(fontsize=8)
+        ax1.grid(alpha=0.25)
+        ax2.set_title("Comparaison normalisée (z-score) — cohérence hydrogéologique", fontsize=10)
+        ax2.set_ylabel('Niveau centré-réduit')
+        ax2.legend(fontsize=8)
+        ax2.grid(alpha=0.25)
+        fig.autofmt_xdate()
+        fig.tight_layout()
+        canvas = FigureCanvasTkAgg(fig, master=self.network_plot_frame)
+        canvas.draw()
+        canvas.get_tk_widget().grid(row=0, column=0, sticky='nswe')
 
     # ══════════════════════════════════════════════════════════════════════════
     # ─── DIGITAL TWIN TAB ──────────────────────────────────────────────────
@@ -1067,47 +1438,67 @@ class App:
                 return cols_lower[alias]
         return None
 
-    def load_file(self):
-        path = filedialog.askopenfilename(
-            filetypes=[('Excel', '*.xlsx *.xls')])
+    def load_chronicle(self, idx):
+        path = filedialog.askopenfilename(filetypes=[('Excel', '*.xlsx *.xls')])
         if not path:
             return
         try:
-            df = pd.read_excel(path)
-            if df.shape[1] < 2:
-                raise ValueError(
-                    'Le fichier doit contenir au moins 2 colonnes : date / niveau')
-            date_col  = self._find_column(df, self.DATE_ALIASES)
-            level_col = self._find_column(df, self.LEVEL_ALIASES)
-            if date_col is None or level_col is None:
-                available = list(df.columns)
-                msg = (
-                    f'Colonnes détectées : {available}\n\n'
-                    f"Colonne date trouvée : {date_col or '❌ NON TROUVÉE'}\n"
-                    f"Colonne niveau trouvée : {level_col or '❌ NON TROUVÉE'}\n\n"
-                    "Renommez les colonnes en 'date' et 'level' dans votre fichier."
-                )
-                raise ValueError(msg)
-            df = df[[date_col, level_col]].copy()
-            df.columns = ['date', 'level']
-            df['date']  = pd.to_datetime(df['date'],  errors='coerce')
-            df['level'] = pd.to_numeric(df['level'], errors='coerce')
-            df = df.dropna().sort_values('date').reset_index(drop=True)
-            if len(df) < 24:
-                raise ValueError(
-                    f'Données insuffisantes : {len(df)} observations valides (min 24).')
-            self.df = df
-            self.cfg.file_path = path
-            self.freq = detect_frequency(df['date'])
-            freq_names = {'D': 'Journalier', 'W': 'Hebdomadaire',
-                          'MS': 'Mensuel', 'QS': 'Trimestriel', 'YS': 'Annuel'}
-            self.freq_label.config(
-                text=f'Fréquence détectée : {freq_names.get(self.freq, self.freq)}'
-                     f' — {len(df)} observations')
-            self.populate_table(df)
-            self.set_status(f'Chargé : {Path(path).name}', '#1a7a1a')
+            df = self._parse_piezo_excel(path)
+            w = self.chron_widgets[idx]
+            self.chronicles[idx] = {
+                'df': df,
+                'name': w['name_var'].get().strip() or f'Piézo {idx}',
+                'masse_eau': w['masse_var'].get().strip(),
+                'path': path,
+            }
+            w['status_lbl'].config(text=f'✓ chargé ({len(df)} obs.)', foreground='#1a7a1a')
+            self._refresh_target_choices()
+            self.refresh_chronicles_view()
         except Exception as e:
             messagebox.showerror('Erreur chargement', str(e))
+
+
+    # def load_file(self):
+    #     path = filedialog.askopenfilename(
+    #         filetypes=[('Excel', '*.xlsx *.xls')])
+    #     if not path:
+    #         return
+    #     try:
+    #         df = pd.read_excel(path)
+    #         if df.shape[1] < 2:
+    #             raise ValueError(
+    #                 'Le fichier doit contenir au moins 2 colonnes : date / niveau')
+    #         date_col  = self._find_column(df, self.DATE_ALIASES)
+    #         level_col = self._find_column(df, self.LEVEL_ALIASES)
+    #         if date_col is None or level_col is None:
+    #             available = list(df.columns)
+    #             msg = (
+    #                 f'Colonnes détectées : {available}\n\n'
+    #                 f"Colonne date trouvée : {date_col or '❌ NON TROUVÉE'}\n"
+    #                 f"Colonne niveau trouvée : {level_col or '❌ NON TROUVÉE'}\n\n"
+    #                 "Renommez les colonnes en 'date' et 'level' dans votre fichier."
+    #             )
+    #             raise ValueError(msg)
+    #         df = df[[date_col, level_col]].copy()
+    #         df.columns = ['date', 'level']
+    #         df['date']  = pd.to_datetime(df['date'],  errors='coerce')
+    #         df['level'] = pd.to_numeric(df['level'], errors='coerce')
+    #         df = df.dropna().sort_values('date').reset_index(drop=True)
+    #         if len(df) < 24:
+    #             raise ValueError(
+    #                 f'Données insuffisantes : {len(df)} observations valides (min 24).')
+    #         self.df = df
+    #         self.cfg.file_path = path
+    #         self.freq = detect_frequency(df['date'])
+    #         freq_names = {'D': 'Journalier', 'W': 'Hebdomadaire',
+    #                       'MS': 'Mensuel', 'QS': 'Trimestriel', 'YS': 'Annuel'}
+    #         self.freq_label.config(
+    #             text=f'Fréquence détectée : {freq_names.get(self.freq, self.freq)}'
+    #                  f' — {len(df)} observations')
+    #         self.populate_table(df)
+    #         self.set_status(f'Chargé : {Path(path).name}', '#1a7a1a')
+    #     except Exception as e:
+    #         messagebox.showerror('Erreur chargement', str(e))
 
     def populate_table(self, df):
         for item in self.table.get_children():
@@ -1370,6 +1761,38 @@ class App:
                     for k, v in self.metrics.items():
                         f.write(f'# {k},{v:.4f}\n')
             self.set_status('Export CSV terminé.', '#1a7a1a')
+            
+    def chronicles_ready(self):
+        loaded = {i: c for i, c in self.chronicles.items() if c is not None}
+        if len(loaded) < 3:
+            return False, f"Il manque {3-len(loaded)} chronique(s) — 3 sont requises."
+        masses = [c['masse_eau'].strip() for c in loaded.values()]
+        if any(not m for m in masses):
+            return False, "Renseignez le code de la masse d'eau ADES pour les 3 chroniques."
+        if len({m.lower() for m in masses}) > 1:
+            return False, "Les 3 chroniques doivent appartenir à la même masse d'eau ADES."
+        return True, f"✓ 3 chroniques prêtes — masse d'eau : {masses[0]}"
+    
+    def refresh_chronicles_view(self):
+        ok, msg = self.chronicles_ready()
+        self.ready_status_lbl.config(text=msg, foreground=('#1a7a1a' if ok else '#cc0000'))
+        self.run_btn.config(state='normal' if ok else 'disabled')
+        self._plot_network_chronicles()
+        if ok:
+            self._build_merged_dataset()
+    
+    def _build_merged_dataset(self):
+        target = self.chronicles[self.target_idx]['df'].copy()
+        self.freq = detect_frequency(target['date'])
+        merged = target.copy()
+        j = 1
+        for i in (1, 2, 3):
+            if i == self.target_idx:
+                continue
+            merged[f'level_aux{j}'] = align_chronicle(self.chronicles[i]['df'], merged['date'])
+            j += 1
+        self.df = merged
+        self.populate_table(target)
 
 
 # ─── ToolTip ───────────────────────────────────────────────────────────────────
