@@ -70,15 +70,15 @@ def make_features(dates: pd.Series) -> pd.DataFrame:
     df['quarter']   = df['date'].dt.quarter
     return df.drop(columns=['date'])
 
-def _compute_correlation_matrix(self, loaded):
-    resampled = {}
-    for i, c in loaded.items():
-        s = c['df'].set_index('date')['level'].sort_index()
-        resampled[c['name']] = s.resample('MS').mean()
-    combined = pd.DataFrame(resampled).dropna()
-    if len(combined) < 3:
-        return None, 0
-    return combined.corr(method='pearson'), len(combined)
+# def _compute_correlation_matrix(self, loaded):
+#     resampled = {}
+#     for i, c in loaded.items():
+#         s = c['df'].set_index('date')['level'].sort_index()
+#         resampled[c['name']] = s.resample('MS').mean()
+#     combined = pd.DataFrame(resampled).dropna()
+#     if len(combined) < 3:
+#         return None, 0
+#     return combined.corr(method='pearson'), len(combined)
 
 def detect_frequency(dates: pd.Series) -> str:
     diffs = dates.diff().dropna().dt.days
@@ -1066,10 +1066,21 @@ class App:
         niveau_field = niveau_base + impact_grid
 
         # Fond coloré
-        levels_cmap = np.linspace(niveau_field.min(), niveau_field.max(), 60)
+        # levels_cmap = np.linspace(niveau_field.min(), niveau_field.max(), 60)
+        # cf = ax.contourf(X, Y, niveau_field,
+        #                  levels=levels_cmap,
+        #                  cmap='Blues_r', alpha=0.85)
+        
+        # Fond coloré (garde-fou si le champ est uniforme, ex. Q=0)
+        vmin, vmax = niveau_field.min(), niveau_field.max()
+        if vmax - vmin < 1e-6:
+            vmin -= 0.05
+            vmax += 0.05
+        levels_cmap = np.linspace(vmin, vmax, 60)
         cf = ax.contourf(X, Y, niveau_field,
                          levels=levels_cmap,
                          cmap='Blues_r', alpha=0.85)
+        
         # Lignes isopièzes
         cs = ax.contour(X, Y, niveau_field,
                         levels=12, colors=DT_ACCENT,
@@ -1713,26 +1724,26 @@ class App:
             self.set_status('Export CSV terminé.', '#1a7a1a')
             
     
-    def refresh_chronicles_view(self):
-        ok, msg = self.chronicles_ready()
-        self.ready_status_lbl.config(text=msg, foreground=('#1a7a1a' if ok else '#cc0000'))
-        self.run_btn.config(state='normal' if ok else 'disabled')
-        self._plot_network_chronicles()
-        if ok:
-            self._build_merged_dataset()
+    # def refresh_chronicles_view(self):
+    #     ok, msg = self.chronicles_ready()
+    #     self.ready_status_lbl.config(text=msg, foreground=('#1a7a1a' if ok else '#cc0000'))
+    #     self.run_btn.config(state='normal' if ok else 'disabled')
+    #     self._plot_network_chronicles()
+    #     if ok:
+    #         self._build_merged_dataset()
     
-    def _build_merged_dataset(self):
-        target = self.chronicles[self.target_idx]['df'].copy()
-        self.freq = detect_frequency(target['date'])
-        merged = target.copy()
-        j = 1
-        for i in (1, 2, 3):
-            if i == self.target_idx:
-                continue
-            merged[f'level_aux{j}'] = align_chronicle(self.chronicles[i]['df'], merged['date'])
-            j += 1
-        self.df = merged
-        self.populate_table(target)
+    # def _build_merged_dataset(self):
+    #     target = self.chronicles[self.target_idx]['df'].copy()
+    #     self.freq = detect_frequency(target['date'])
+    #     merged = target.copy()
+    #     j = 1
+    #     for i in (1, 2, 3):
+    #         if i == self.target_idx:
+    #             continue
+    #         merged[f'level_aux{j}'] = align_chronicle(self.chronicles[i]['df'], merged['date'])
+    #         j += 1
+    #     self.df = merged
+    #     self.populate_table(target)
 
 
 # ─── ToolTip ───────────────────────────────────────────────────────────────────
