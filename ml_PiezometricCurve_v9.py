@@ -60,25 +60,24 @@ class Config:
 
 # ─── Helpers feature engineering ───────────────────────────────────────────────
 
-def make_features(dates: pd.Series) -> pd.DataFrame:
+def make_features(dates, aux1=None, aux2=None):
     df = pd.DataFrame({'date': pd.to_datetime(dates)})
-    df['t']         = (df['date'] - df['date'].min()).dt.days
-    df['month']     = df['date'].dt.month
+
+    df['t'] = (df['date'] - df['date'].min()).dt.days
+    df['month'] = df['date'].dt.month
     df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
     df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
-    df['year']      = df['date'].dt.year
-    df['quarter']   = df['date'].dt.quarter
+    df['year'] = df['date'].dt.year
+    df['quarter'] = df['date'].dt.quarter
+
+    if aux1 is not None:
+        df['level_aux1'] = aux1
+
+    if aux2 is not None:
+        df['level_aux2'] = aux2
+
     return df.drop(columns=['date'])
 
-# def _compute_correlation_matrix(self, loaded):
-#     resampled = {}
-#     for i, c in loaded.items():
-#         s = c['df'].set_index('date')['level'].sort_index()
-#         resampled[c['name']] = s.resample('MS').mean()
-#     combined = pd.DataFrame(resampled).dropna()
-#     if len(combined) < 3:
-#         return None, 0
-#     return combined.corr(method='pearson'), len(combined)
 
 def detect_frequency(dates: pd.Series) -> str:
     diffs = dates.diff().dropna().dt.days
@@ -180,6 +179,9 @@ class ARIMAModel:
         self.ci_level = ci_level
         self.res_     = None
         self.order_   = None
+        self.aux_cols_   = []
+        self.origin_     = None
+        self.exog_trend_ = {}
 
     def _is_stationary(self, y):
         try:
@@ -187,7 +189,25 @@ class ARIMAModel:
         except Exception:
             return False
 
-    def fit(self, y: np.ndarray):
+    def fit(self, df: pd.DataFrame, aux_cols=None):
+        aux_cols = aux_cols or []
+        self.aux_cols_ = aux_cols
+        self.origin_   = df['date'].min()
+        y = df['level'].values
+
+        exog = None
+        if aux_cols:
+            exog = df[aux_cols].values
+            t = (df['date'] - self.origin_).dt.days.values
+            for c in aux_cols:
+                vals = df[c].values
+                mask = ~np.isnan(vals)
+                if mask.sum() >= 2:
+                    slope, intercept = np.polyfit(t[mask], vals[mask], 1)
+                else:
+                    slope, intercept = 0.0, float(vals[mask].mean()) if mask.any() else 0.0
+                self.exog_trend_[c] = (slope, intercept)
+
         d  = 0 if self._is_stationary(y) else 1
         sp = self.sp if self.sp > 1 else 0
         best_aic = np.inf
@@ -195,12 +215,12 @@ class ARIMAModel:
         for p, _, q in self.CANDIDATES:
             try:
                 if sp > 1:
-                    m = SARIMAX(y, order=(p, d, q),
+                    m = SARIMAX(y, exog=exog, order=(p, d, q),
                                 seasonal_order=(1, 1, 1, sp),
                                 enforce_stationarity=False,
                                 enforce_invertibility=False)
                 else:
-                    m = SARIMAX(y, order=(p, d, q),
+                    m = SARIMAX(y, exog=exog, order=(p, d, q),
                                 enforce_stationarity=False,
                                 enforce_invertibility=False)
                 res = m.fit(disp=False, maxiter=200)
@@ -215,13 +235,75 @@ class ARIMAModel:
         self.res_ = best_res
         return self
 
-    def predict(self, steps: int):
-        fc   = self.res_.get_forecast(steps=steps)
+    def predict(self, steps: int, future_dates=None):
+        exog_fut = None
+        if self.aux_cols_:
+            t_fut = (pd.to_datetime(pd.Series(future_dates)) - self.origin_).dt.days.values
+            exog_fut = np.column_stack([
+                self.exog_trend_[c][0] * t_fut + self.exog_trend_[c][1]
+                for c in self.aux_cols_
+            ])
+        fc   = self.res_.get_forecast(steps=steps, exog=exog_fut)
         pred = fc.predicted_mean
         ci   = fc.conf_int(alpha=self.ci_level)
         lo   = ci.iloc[:, 0].values
         hi   = ci.iloc[:, 1].values
         return pred, lo, hi
+
+# class ARIMAModel:
+#     CANDIDATES = [
+#         (1, 1, 1), (1, 1, 0), (0, 1, 1),
+#         (2, 1, 1), (1, 1, 2), (2, 1, 2),
+#         (0, 1, 2), (2, 1, 0),
+#     ]
+
+#     def __init__(self, seasonal_periods: int, ci_level: float):
+#         self.sp       = seasonal_periods
+#         self.ci_level = ci_level
+#         self.res_     = None
+#         self.order_   = None
+
+#     def _is_stationary(self, y):
+#         try:
+#             return adfuller(y)[1] < 0.05
+#         except Exception:
+#             return False
+
+#     def fit(self, y: np.ndarray):
+#         d  = 0 if self._is_stationary(y) else 1
+#         sp = self.sp if self.sp > 1 else 0
+#         best_aic = np.inf
+#         best_res = None
+#         for p, _, q in self.CANDIDATES:
+#             try:
+#                 if sp > 1:
+#                     m = SARIMAX(y, order=(p, d, q),
+#                                 seasonal_order=(1, 1, 1, sp),
+#                                 enforce_stationarity=False,
+#                                 enforce_invertibility=False)
+#                 else:
+#                     m = SARIMAX(y, order=(p, d, q),
+#                                 enforce_stationarity=False,
+#                                 enforce_invertibility=False)
+#                 res = m.fit(disp=False, maxiter=200)
+#                 if res.aic < best_aic:
+#                     best_aic = res.aic
+#                     best_res = res
+#                     self.order_ = (p, d, q)
+#             except Exception:
+#                 continue
+#         if best_res is None:
+#             raise RuntimeError("ARIMA : impossible d'ajuster le modèle.")
+#         self.res_ = best_res
+#         return self
+
+#     def predict(self, steps: int):
+#         fc   = self.res_.get_forecast(steps=steps)
+#         pred = fc.predicted_mean
+#         ci   = fc.conf_int(alpha=self.ci_level)
+#         lo   = ci.iloc[:, 0].values
+#         hi   = ci.iloc[:, 1].values
+#         return pred, lo, hi
 
 
 class SklearnModel:
@@ -232,6 +314,8 @@ class SklearnModel:
         self.models_      = []
         self.scaler_      = StandardScaler()
         self.train_origin_ = None
+        self.aux_cols_     = []
+        self.aux_trend_    = {}
 
     def _make_model(self):
         if self.kind == 'RandomForest':
@@ -242,10 +326,27 @@ class SklearnModel:
                                              learning_rate=0.05,
                                              subsample=0.8, random_state=42)
 
-    def fit(self, df: pd.DataFrame):
-        self.train_origin_ = df['date'].min()
+    def fit(self, df: pd.DataFrame, aux_cols=None):
+        aux_cols = aux_cols or []
+        self.aux_cols_      = aux_cols
+        self.train_origin_  = df['date'].min()
+
         X = make_features(df['date'])
+        for c in aux_cols:
+            X[c] = df[c].values
         y = df['level'].values
+
+        # Tendance linéaire de chaque covariable pour extrapolation future
+        t = (df['date'] - self.train_origin_).dt.days.values
+        for c in aux_cols:
+            vals = df[c].values
+            mask = ~np.isnan(vals)
+            if mask.sum() >= 2:
+                slope, intercept = np.polyfit(t[mask], vals[mask], 1)
+            else:
+                slope, intercept = 0.0, float(vals[mask].mean()) if mask.any() else 0.0
+            self.aux_trend_[c] = (slope, intercept)
+
         X_scaled = self.scaler_.fit_transform(X)
         n = len(y)
         for _ in range(self.n_bootstraps):
@@ -263,6 +364,11 @@ class SklearnModel:
         df_feat['month_cos'] = np.cos(2 * np.pi * df_feat['month'] / 12)
         df_feat['year']      = df_feat['date'].dt.year
         df_feat['quarter']   = df_feat['date'].dt.quarter
+
+        for c in self.aux_cols_:
+            slope, intercept = self.aux_trend_[c]
+            df_feat[c] = slope * df_feat['t'] + intercept
+
         X_fut    = df_feat.drop(columns=['date'])
         X_scaled = self.scaler_.transform(X_fut)
         preds    = np.array([m.predict(X_scaled) for m in self.models_])
@@ -1622,22 +1728,44 @@ class App:
     def _fit_predict(self, df_fit, steps, future_dates):
         model_name = self.cfg.model
         sp = freq_to_seasonal_periods(self.freq)
-        y  = df_fit['level'].values
+        aux_cols = [c for c in df_fit.columns if c.startswith('level_aux')]
+    
         if model_name == 'ETS':
+            y = df_fit['level'].values
             m = ETSModel(self.cfg.ets_type, sp, self.cfg.ci_level)
             m.fit(y)
             pred, lo, hi = m.predict(steps)
         elif model_name == 'ARIMA':
             m = ARIMAModel(sp, self.cfg.ci_level)
-            m.fit(y)
-            pred, lo, hi = m.predict(steps)
+            m.fit(df_fit, aux_cols)
+            pred, lo, hi = m.predict(steps, future_dates)
         elif model_name in ('RandomForest', 'XGBoost'):
             m = SklearnModel(model_name, self.cfg.ci_level, self.cfg.n_bootstraps)
-            m.fit(df_fit)
+            m.fit(df_fit, aux_cols)
             pred, lo, hi = m.predict(future_dates)
         else:
             raise ValueError(f'Modèle inconnu : {model_name}')
         return np.array(pred), np.array(lo), np.array(hi)
+
+    # def _fit_predict(self, df_fit, steps, future_dates):
+    #     model_name = self.cfg.model
+    #     sp = freq_to_seasonal_periods(self.freq)
+    #     y  = df_fit['level'].values
+    #     if model_name == 'ETS':
+    #         m = ETSModel(self.cfg.ets_type, sp, self.cfg.ci_level)
+    #         m.fit(y)
+    #         pred, lo, hi = m.predict(steps)
+    #     elif model_name == 'ARIMA':
+    #         m = ARIMAModel(sp, self.cfg.ci_level)
+    #         m.fit(y)
+    #         pred, lo, hi = m.predict(steps)
+    #     elif model_name in ('RandomForest', 'XGBoost'):
+    #         m = SklearnModel(model_name, self.cfg.ci_level, self.cfg.n_bootstraps)
+    #         m.fit(df_fit)
+    #         pred, lo, hi = m.predict(future_dates)
+    #     else:
+    #         raise ValueError(f'Modèle inconnu : {model_name}')
+    #     return np.array(pred), np.array(lo), np.array(hi)
 
     def show_plot(self, df_train, df_val, pred_val, lo_val, hi_val,
                   future_dates, pred_fut, lo_fut, hi_fut):
