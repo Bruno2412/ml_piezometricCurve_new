@@ -13,6 +13,11 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.stattools import adfuller
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
+from scipy.interpolate import griddata
+import matplotlib as plt
+import io
+import base64
+
 
 DATE_ALIASES = [
     'date de la mesure', 'date_mesure', 'date mesure', 'date',
@@ -136,6 +141,22 @@ def calculate_spatial_impact(Q, S, K, thickness, distance, time_days, Area):
             return 0
         impact = (Q / (4 * np.pi * T)) * exp1(u)
     return max(0, impact)
+
+def surface_to_png_overlay(GLon, GLat, GZ, cmap='Blues_r', alpha=0.75):
+    """Convertit une grille interpolée en image PNG transparente,
+    exploitable comme overlay Folium. Retourne (png_bytes, bounds)."""
+    fig, ax = plt.subplots(figsize=(GLon.shape[1] / 40, GLon.shape[0] / 40), dpi=100)
+    ax.contourf(GLon, GLat, GZ, levels=25, cmap=cmap, alpha=alpha)
+    ax.axis('off')
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', transparent=True)
+    plt.close(fig)
+    buf.seek(0)
+
+    bounds = [[GLat.min(), GLon.min()], [GLat.max(), GLon.max()]]
+    return buf.getvalue(), bounds
 
 
 # ─── Modèles (copiés tels quels depuis ton fichier Tkinter) ────────────────
@@ -322,3 +343,86 @@ def fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, ets_typ
     else:
         raise ValueError(f'Modèle inconnu : {model_name}')
     return np.array(pred), np.array(lo), np.array(hi)
+
+
+def parse_descriptif(path):
+    """Lit le fichier descriptif ADES (pipe-séparé) et retourne un dict
+    {identifiant_bss: {'lon', 'lat', 'name', 'masse_eau'}}."""
+    df = None
+    last_error = None
+    for encoding in ('utf-8', 'latin-1', 'cp1252'):
+        try:
+            df = pd.read_csv(path, sep='|', engine='python', encoding=encoding)
+            break
+        except (UnicodeDecodeError, UnicodeError) as e:
+            last_error = e
+            continue
+    if df is None:
+        raise ValueError(f"Impossible de décoder le fichier (essayé utf-8/latin-1/cp1252) : {last_error}")
+
+    df.columns = [c.strip() for c in df.columns]
+    out = {}
+    for _, row in df.iterrows():
+        bss_id = str(row['Identifiant national BSS']).strip()
+        try:
+            lon = float(row['X_WGS84'])
+            lat = float(row['Y_WGS84'])
+        except (ValueError, TypeError):
+            continue
+        out[bss_id] = {
+            'lon': lon,
+            'lat': lat,
+            'name': row.get('Dénomination', bss_id),
+            'masse_eau': str(row.get("Masse(s) d'eau", '')).strip(),
+        }
+    return out
+
+# def parse_descriptif(path):
+#     """Lit le fichier descriptif ADES (pipe-séparé) et retourne un dict
+#     {identifiant_bss: {'lon', 'lat', 'name', 'masse_eau'}}."""
+#     df = pd.read_csv(path, sep='|', engine='python')
+#     df.columns = [c.strip() for c in df.columns]
+#     out = {}
+#     for _, row in df.iterrows():
+#         bss_id = str(row['Identifiant national BSS']).strip()
+#         try:
+#             lon = float(row['X_WGS84'])
+#             lat = float(row['Y_WGS84'])
+#         except (ValueError, TypeError):
+#             continue
+#         out[bss_id] = {
+#             'lon': lon,
+#             'lat': lat,
+#             'name': row.get('Dénomination', bss_id),
+#             'masse_eau': str(row.get("Masse(s) d'eau", '')).strip(),
+#         }
+#     return out
+
+
+def value_at_date(df, date):
+    """Valeur interpolée d'une chronique à une date donnée (méthode temporelle)."""
+    s = df.set_index('date')['level'].sort_index()
+    idx = pd.DatetimeIndex([pd.to_datetime(date)])
+    combined = s.index.union(idx)
+    s_full = s.reindex(combined).astype(float).interpolate(method='time', limit_direction='both')
+    return float(s_full.reindex(idx).iloc[0])
+
+
+def build_piezo_surface(coords, values, n=120, margin_ratio=0.3):
+    """Interpole une surface piézométrique linéaire entre 3 points (ou plus).
+    coords : liste de dicts avec 'lon'/'lat'. values : niveaux correspondants.
+    Retourne (grille_lon, grille_lat, grille_niveaux) — NaN hors du triangle formé
+    par les points (limite intrinsèque d'une interpolation à seulement 3 points)."""
+    lons = np.array([c['lon'] for c in coords])
+    lats = np.array([c['lat'] for c in coords])
+    vals = np.array(values, dtype=float)
+
+    span_lon = lons.max() - lons.min() or 0.01
+    span_lat = lats.max() - lats.min() or 0.01
+    grid_lon = np.linspace(lons.min() - span_lon * margin_ratio,
+                           lons.max() + span_lon * margin_ratio, n)
+    grid_lat = np.linspace(lats.min() - span_lat * margin_ratio,
+                           lats.max() + span_lat * margin_ratio, n)
+    GLon, GLat = np.meshgrid(grid_lon, grid_lat)
+    GZ = griddata((lons, lats), vals, (GLon, GLat), method='linear')
+    return GLon, GLat, GZ
