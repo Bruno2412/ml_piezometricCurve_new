@@ -14,7 +14,7 @@ from statsmodels.tsa.stattools import adfuller
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
 from scipy.interpolate import griddata
-import matplotlib as plt
+import matplotlib.pyplot as plt
 import io
 import base64
 

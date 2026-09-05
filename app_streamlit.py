@@ -6,8 +6,8 @@ import folium
 from streamlit_folium import st_folium
 import base64
 
-st.write("MODULE CHARGÉ :", core.__file__)
-st.write("FONCTION PRÉSENTE :", hasattr(core, "surface_to_png_overlay"))
+# st.write("MODULE CHARGÉ :", core.__file__)
+# st.write("FONCTION PRÉSENTE :", hasattr(core, "surface_to_png_overlay"))
 
 
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
