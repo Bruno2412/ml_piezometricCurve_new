@@ -14,6 +14,7 @@ from statsmodels.tsa.stattools import adfuller
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
 from scipy.interpolate import griddata
+from matplotlib.patches import Circle
 import matplotlib.pyplot as plt
 import io
 import base64
@@ -158,6 +159,114 @@ def surface_to_png_overlay(GLon, GLat, GZ, cmap='Blues_r', alpha=0.75):
     bounds = [[GLat.min(), GLon.min()], [GLat.max(), GLon.max()]]
     return buf.getvalue(), bounds
 
+# ─── Digital Twin — carte Theis 2D ──────────────────────────────────────
+
+def draw_nappe_2d_figure(Q, S, K, thickness, distance, time_days, Area, niveau_base=0.0):
+    """Reconstruit la carte Theis 2D (équivalent de _draw_nappe_2d Tkinter),
+    retourne une figure matplotlib prête pour st.pyplot()."""
+    fig, ax = plt.subplots(figsize=(7, 6))
+
+    size = max(distance * 3, 200)
+    nx, ny = 120, 120
+    x = np.linspace(-size, size, nx)
+    y = np.linspace(-size, size, ny)
+    X, Y = np.meshgrid(x, y)
+    R = np.maximum(np.sqrt(X**2 + Y**2), 1e-3)
+
+    T = K * thickness
+    impact_grid = np.zeros_like(R)
+    if T > 0 and S > 0 and time_days > 0 and Q > 0:
+        u = (R**2 * S) / (4 * T * time_days)
+        mask = u < 5
+        impact_grid[mask] = (Q / (4 * np.pi * T)) * exp1(u[mask])
+        impact_grid = np.clip(impact_grid, 0, niveau_base + 10)
+
+    niveau_field = niveau_base + impact_grid
+
+    vmin, vmax = niveau_field.min(), niveau_field.max()
+    if vmax - vmin < 1e-6:
+        vmin -= 0.05
+        vmax += 0.05
+    levels_cmap = np.linspace(vmin, vmax, 60)
+
+    cf = ax.contourf(X, Y, niveau_field, levels=levels_cmap, cmap='Blues_r', alpha=0.85)
+    cs = ax.contour(X, Y, niveau_field, levels=12, colors='#0d6efd', linewidths=0.6, alpha=0.6)
+    ax.clabel(cs, inline=True, fontsize=6, fmt='%.1f m')
+    fig.colorbar(cf, ax=ax, fraction=0.04, pad=0.02, label='Niveau piézo. (m)')
+
+    R_bassin = np.sqrt(Area / np.pi)
+    ax.add_patch(Circle((0, 0), R_bassin, color='#e85d04', fill=True, alpha=0.5, zorder=6))
+    ax.plot(0, 0, 'o', color='#e85d04', ms=8, zorder=7, label='Ouvrage injection')
+
+    r_inf = None
+    if T > 0 and S > 0 and time_days > 0 and Q > 0:
+        r_inf = min(size * 0.95, np.sqrt(4 * T * time_days / S) * 2)
+        ax.add_patch(Circle((0, 0), r_inf, color='#20c997', fill=False,
+                            linestyle='--', linewidth=1.4, alpha=0.8, zorder=5,
+                            label=f"R influence ≈{r_inf:.0f} m"))
+
+    ax.plot(distance, 0, '^', color='#ffc107', ms=10, zorder=8, label=f'Piézomètre ({distance:.0f} m)')
+    ax.annotate(f' Piézo\n {distance:.0f} m', (distance, 0), fontsize=7,
+               xytext=(distance + size * 0.05, size * 0.08))
+
+    ax.set_xlim(-size, size)
+    ax.set_ylim(-size, size)
+    ax.set_aspect('equal')
+    ax.set_title(f'Simulation Theis — t={time_days:.0f}j  Q={Q:.1f} m³/j  K={K:.1e} m/s', fontsize=10)
+    ax.set_xlabel('Distance Est (m)')
+    ax.set_ylabel('Distance Nord (m)')
+    ax.legend(fontsize=7, loc='upper right')
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    return fig
+
+
+def response_curve_data(Q, S, K, thickness, distance, Area, t_max, niveau_base):
+    """Calcule la réponse temporelle (spatial Theis + volumétrique cumulé)."""
+    t_arr = np.linspace(1, t_max, 300)
+    impact_t = np.array([calculate_spatial_impact(Q, S, K, thickness, distance, t, Area) for t in t_arr])
+    days_step = t_arr[1] - t_arr[0]
+    vol_rise = np.cumsum(np.full(len(t_arr), (Q * days_step) / (Area * S) if Area > 0 else 0))
+    total_impact = impact_t + vol_rise
+    return t_arr, impact_t + niveau_base, total_impact + niveau_base
+
+
+def compute_dashboard_indicators(df, freq, Q, S, K, thickness, distance, Area):
+    """Reconstruit les indicateurs du dashboard Tkinter (_compute_and_update_dashboard)."""
+    niveau_actuel = df['level'].iloc[-1]
+    n_30 = min(30, len(df) - 1)
+    variation_30j = df['level'].iloc[-1] - df['level'].iloc[-1 - n_30]
+
+    n_trend = min(120, len(df))
+    x_t = np.arange(n_trend)
+    y_t = df['level'].values[-n_trend:]
+    p = np.polyfit(x_t, y_t, 1)
+    freq_factor = freq_to_seasonal_periods(freq)
+    tendance = p[0] * freq_factor
+
+    impact_inj = calculate_spatial_impact(Q, S, K, thickness, distance, 180, Area)
+
+    if tendance < -0.5:
+        risque = min(95, 60 + abs(tendance) * 10)
+    elif tendance < 0:
+        risque = min(60, 30 + abs(tendance) * 20)
+    else:
+        risque = max(5, 30 - tendance * 10)
+
+    if Q > 0 and Area > 0 and S > 0:
+        rise_rate = Q / (Area * S)
+        temps_rech = max(1, 0.5 / rise_rate) if rise_rate > 0 else 9999
+    else:
+        temps_rech = 9999
+
+    return {
+        'niveau_actuel': niveau_actuel,
+        'variation_30j': variation_30j,
+        'tendance': tendance,
+        'impact_inj': impact_inj,
+        'risque': risque,
+        'temps_rech': temps_rech,
+    }
 
 # ─── Modèles (copiés tels quels depuis ton fichier Tkinter) ────────────────
 
