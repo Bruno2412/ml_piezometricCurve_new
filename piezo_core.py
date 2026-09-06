@@ -16,8 +16,10 @@ from sklearn.preprocessing import StandardScaler
 from scipy.interpolate import griddata
 from matplotlib.patches import Circle
 import matplotlib.pyplot as plt
+import unicodedata
 import io
 import base64
+import csv
 
 
 DATE_ALIASES = [
@@ -38,6 +40,16 @@ MASSE_EAU_ALIASES = [
     "masse d'eau", 'masse deau', 'code masse eau',
     'masse_eau', 'code_masse_eau',
 ]
+
+
+def _clean_str(s):
+    """Supprime BOM, espaces insécables et espaces classiques en début/fin."""
+    if s is None:
+        return ''
+    s = str(s)
+    s = s.replace('\ufeff', '')       # BOM résiduel
+    s = s.replace('\xa0', ' ')        # espace insécable -> espace normal
+    return s.strip()
 
 
 def find_column(df, aliases):
@@ -485,36 +497,75 @@ def fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, ets_typ
 
 
 def parse_descriptif(path):
-    """Lit le fichier descriptif ADES (pipe-séparé) et retourne un dict
-    {identifiant_bss: {'lon', 'lat', 'name', 'masse_eau'}}."""
     df = None
     last_error = None
-    for encoding in ('utf-8', 'latin-1', 'cp1252'):
+    for encoding in ('utf-8-sig', 'cp1252', 'latin-1'):
         try:
-            df = pd.read_csv(path, sep='|', engine='python', encoding=encoding)
+            df = pd.read_csv(
+                path, sep='|', engine='python', encoding=encoding,
+                dtype=str,
+                quoting=csv.QUOTE_NONE,   # <-- clé : le | est le seul séparateur, jamais le "
+            )
             break
         except (UnicodeDecodeError, UnicodeError) as e:
             last_error = e
             continue
     if df is None:
-        raise ValueError(f"Impossible de décoder le fichier (essayé utf-8/latin-1/cp1252) : {last_error}")
+        raise ValueError(f"Impossible de décoder le fichier : {last_error}")
 
-    df.columns = [c.strip() for c in df.columns]
+    df.columns = [_clean_str(c) for c in df.columns]
+    if 'Identifiant national BSS' not in df.columns:
+        raise ValueError(f"Colonne ID introuvable. Colonnes lues : {list(df.columns)}")
+
     out = {}
     for _, row in df.iterrows():
-        bss_id = str(row['Identifiant national BSS']).strip()
+        bss_id = _clean_str(row['Identifiant national BSS'])
+        if not bss_id:
+            continue
         try:
-            lon = float(row['X_WGS84'])
-            lat = float(row['Y_WGS84'])
+            lon = float(str(row['X_WGS84']).replace(',', '.'))
+            lat = float(str(row['Y_WGS84']).replace(',', '.'))
         except (ValueError, TypeError):
             continue
         out[bss_id] = {
-            'lon': lon,
-            'lat': lat,
-            'name': row.get('Dénomination', bss_id),
-            'masse_eau': str(row.get("Masse(s) d'eau", '')).strip(),
+            'lon': lon, 'lat': lat,
+            'name': _clean_str(row.get('Dénomination', bss_id)),
+            'masse_eau': _clean_str(row.get("Masse(s) d'eau", '')),
         }
     return out
+
+
+# def parse_descriptif(path):
+#     """Lit le fichier descriptif ADES (pipe-séparé) et retourne un dict
+#     {identifiant_bss: {'lon', 'lat', 'name', 'masse_eau'}}."""
+#     df = None
+#     last_error = None
+#     for encoding in ('utf-8', 'latin-1', 'cp1252'):
+#         try:
+#             df = pd.read_csv(path, sep='|', engine='python', encoding=encoding)
+#             break
+#         except (UnicodeDecodeError, UnicodeError) as e:
+#             last_error = e
+#             continue
+#     if df is None:
+#         raise ValueError(f"Impossible de décoder le fichier (essayé utf-8/latin-1/cp1252) : {last_error}")
+
+#     df.columns = [c.strip() for c in df.columns]
+#     out = {}
+#     for _, row in df.iterrows():
+#         bss_id = str(row['Identifiant national BSS']).strip()
+#         try:
+#             lon = float(row['X_WGS84'])
+#             lat = float(row['Y_WGS84'])
+#         except (ValueError, TypeError):
+#             continue
+#         out[bss_id] = {
+#             'lon': lon,
+#             'lat': lat,
+#             'name': row.get('Dénomination', bss_id),
+#             'masse_eau': str(row.get("Masse(s) d'eau", '')).strip(),
+#         }
+#     return out
 
 
 def value_at_date(df, date):

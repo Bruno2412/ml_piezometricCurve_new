@@ -149,7 +149,7 @@ if uploaded_file is not None:
                 
                     descriptif_path = st.text_input(
                         "Chemin du fichier descriptif ADES",
-                        value=r"C:\Users\bruno.DESKTOP-I2NE6NI\OneDrive\Bureau\Projet_Courbes_piezo\chroniques\ades_export\Descriptif\descriptif.txt"
+                        value=r"C:\Users\bruno.DESKTOP-I2NE6NI\OneDrive\Bureau\Projet_Courbes_piezo\chroniques_2\ades_export\Descriptif\descriptif.txt"
                     )
                 
                     try:
@@ -158,18 +158,33 @@ if uploaded_file is not None:
                         st.error(f"Impossible de lire le fichier descriptif : {e}")
                         coords_dict = {}
                 
-                    missing = [name for name in selection if name not in coords_dict]
+                    st.write("len coords_dict:", len(coords_dict))
+                    st.write("TPVW présent ?", 'BSS001TPVW' in coords_dict)
+                    if 'BSS001TPVW' in coords_dict:
+                        st.write("Valeur stockée :", coords_dict['BSS001TPVW'])
+                
+                    missing = [name for name in selection if name.strip() not in coords_dict]
+                    available = [name for name in selection if name.strip() in coords_dict]
+                
                     if missing:
                         st.warning(f"Coordonnées introuvables pour : {missing} — "
-                                  "vérifie que les identifiants correspondent bien au fichier descriptif.")
-                    else:
-                        coords = [coords_dict[name] for name in selection]
+                                  "carte affichée avec les points disponibles seulement.")
                 
-                        min_date = max(chronicles[i]['df']['date'].min() for i in (1, 2, 3))
-                        max_date = min(chronicles[i]['df']['date'].max() for i in (1, 2, 3))
+                    if len(available) < 3:
+                        st.error(
+                            f"Seuls {len(available)} point(s) sur {len(selection)} ont des coordonnées "
+                            "connues dans le fichier descriptif — au moins 3 sont nécessaires pour "
+                            "interpoler une surface piézométrique."
+                        )
+                    else:
+                        coords = [coords_dict[name] for name in available]
+                        idx_available = [selection.index(name) + 1 for name in available]
+                
+                        min_date = max(chronicles[i]['df']['date'].min() for i in idx_available)
+                        max_date = min(chronicles[i]['df']['date'].max() for i in idx_available)
                 
                         if min_date >= max_date:
-                            st.error("Aucune période commune entre les 3 chroniques.")
+                            st.error("Aucune période commune entre les points disponibles.")
                         else:
                             selected_date = st.slider(
                                 "Date de la carte",
@@ -179,16 +194,16 @@ if uploaded_file is not None:
                                 format="DD/MM/YYYY"
                             )
                 
-                            values = [core.value_at_date(chronicles[i]['df'], selected_date) for i in (1, 2, 3)]
+                            values = [core.value_at_date(chronicles[i]['df'], selected_date) for i in idx_available]
                             GLon, GLat, GZ = core.build_piezo_surface(coords, values)
-                            png_bytes, bounds = core.surface_to_png_overlay(GLon, GLat, GZ)
                 
-                            center_lat = sum(c['lat'] for c in coords) / 3
-                            center_lon = sum(c['lon'] for c in coords) / 3
+                            center_lat = sum(c['lat'] for c in coords) / len(coords)
+                            center_lon = sum(c['lon'] for c in coords) / len(coords)
                 
                             m = folium.Map(location=[center_lat, center_lon], zoom_start=13,
                                           tiles="OpenStreetMap")
                 
+                            png_bytes, bounds = core.surface_to_png_overlay(GLon, GLat, GZ)
                             img_data = f"data:image/png;base64,{base64.b64encode(png_bytes).decode()}"
                             folium.raster_layers.ImageOverlay(
                                 image=img_data,
@@ -197,7 +212,7 @@ if uploaded_file is not None:
                                 interactive=False,
                             ).add_to(m)
                 
-                            for c, name, val in zip(coords, selection, values):
+                            for c, name, val in zip(coords, available, values):
                                 folium.Marker(
                                     location=[c['lat'], c['lon']],
                                     popup=f"<b>{name}</b><br>Niveau : {val:.2f} m<br>Masse d'eau : {c['masse_eau']}",
@@ -208,9 +223,10 @@ if uploaded_file is not None:
                             st_folium(m, width=900, height=600, returned_objects=[])
                 
                             st.caption(
-                                "⚠️ Interpolation linéaire entre 3 points seulement — la surface colorée "
-                                "n'est valide qu'à l'intérieur du triangle formé par les 3 piézomètres, "
-                                "et reste une approximation grossière comparée à un krigeage sur un réseau plus dense."
+                                f"⚠️ Interpolation linéaire entre {len(available)} point(s) — la surface "
+                                "colorée n'est valide qu'à l'intérieur du polygone formé par les points "
+                                "disponibles, et reste une approximation grossière comparée à un krigeage "
+                                "sur un réseau plus dense."
                             )
                             
                 with tab_twin:
