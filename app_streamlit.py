@@ -6,9 +6,6 @@ import folium
 from streamlit_folium import st_folium
 import base64
 
-# st.write("MODULE CHARGÉ :", core.__file__)
-# st.write("FONCTION PRÉSENTE :", hasattr(core, "surface_to_png_overlay"))
-
 
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
 st.title("Expert Piézométrie Pro — Digital Twin")
@@ -285,82 +282,6 @@ if uploaded_file is not None:
                         c5.metric("Risque nappe", f"{indicators['risque']:.0f} %")
                         c6.metric("Temps recharge", f"{indicators['temps_rech']:.0f} j")
                             
-                # with st.sidebar:
-                #     st.header("Injection Maîtrisée")
-                #     thickness = st.number_input("Épaisseur Aquifère (m)", value=10.0)
-                #     Q = st.number_input("Débit injecté (m³/jour)", value=0.0)
-                #     S = st.number_input("Coeff. Emmagasinement (S)", value=0.05, format="%.4f")
-                #     Area = st.number_input("Surface de l'ouvrage (m²)", value=100.0)
-                #     distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
-                #     K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
-                    
-
-
-
-
-
-
-
-                # with tab_carte:
-                #     st.subheader("Carte piézométrique évolutive")
-                
-                #     descriptif_path = st.text_input(
-                #         "Chemin du fichier descriptif ADES",
-                #         value=r"C:\Users\bruno.DESKTOP-I2NE6NI\OneDrive\Bureau\Projet_Courbes_piezo\chroniques\ades_export\Descriptif\descriptif.txt"
-                #     )
-                
-                #     try:
-                #         coords_dict = core.parse_descriptif(descriptif_path)
-                #     except Exception as e:
-                #         st.error(f"Impossible de lire le fichier descriptif : {e}")
-                #         coords_dict = {}
-                
-                #     missing = [name for name in selection if name not in coords_dict]
-                #     if missing:
-                #         st.warning(f"Coordonnées introuvables pour : {missing} — "
-                #                   "vérifie que les identifiants correspondent bien au fichier descriptif.")
-                #     else:
-                #         coords = [coords_dict[name] for name in selection]
-                
-                #         # Plage de dates communes aux 3 chroniques
-                #         min_date = max(chronicles[i]['df']['date'].min() for i in (1, 2, 3))
-                #         max_date = min(chronicles[i]['df']['date'].max() for i in (1, 2, 3))
-                
-                #         if min_date >= max_date:
-                #             st.error("Aucune période commune entre les 3 chroniques.")
-                #         else:
-                #             selected_date = st.slider(
-                #                 "Date de la carte",
-                #                 min_value=min_date.to_pydatetime(),
-                #                 max_value=max_date.to_pydatetime(),
-                #                 value=max_date.to_pydatetime(),
-                #                 format="DD/MM/YYYY"
-                #             )
-                
-                #             values = [core.value_at_date(chronicles[i]['df'], selected_date) for i in (1, 2, 3)]
-                #             GLon, GLat, GZ = core.build_piezo_surface(coords, values)
-                
-                #             fig3, ax3 = plt.subplots(figsize=(8, 7))
-                #             cf = ax3.contourf(GLon, GLat, GZ, levels=20, cmap='Blues_r', alpha=0.85)
-                #             cs = ax3.contour(GLon, GLat, GZ, levels=10, colors='#2c7be5', linewidths=0.6)
-                #             ax3.clabel(cs, inline=True, fontsize=7, fmt='%.2f m')
-                #             fig3.colorbar(cf, ax=ax3, label='Niveau piézométrique (m)')
-                
-                #             for c, name, val in zip(coords, selection, values):
-                #                 ax3.plot(c['lon'], c['lat'], 'o', color='#e85d04', ms=10, zorder=5)
-                #                 ax3.annotate(f"{name}\n{val:.2f} m", (c['lon'], c['lat']),
-                #                             xytext=(5, 5), textcoords='offset points', fontsize=8)
-                
-                #             ax3.set_xlabel("Longitude"); ax3.set_ylabel("Latitude")
-                #             ax3.set_title(f"Surface piézométrique interpolée — {selected_date.strftime('%d/%m/%Y')}")
-                #             ax3.set_aspect('equal')
-                #             st.pyplot(fig3)
-                
-                #             st.caption(
-                #                 "⚠️ Interpolation linéaire entre 3 points seulement — la surface n'est "
-                #                 "valide qu'à l'intérieur du triangle formé par les 3 piézomètres, et reste "
-                #                 "une approximation grossière comparée à un krigeage sur un réseau plus dense."
-                #             )
 
     except ValueError as e:
         st.sidebar.error(str(e))
