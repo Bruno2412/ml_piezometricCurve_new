@@ -16,7 +16,6 @@ st.title("Expert Piézométrie Pro — Digital Twin")
 with st.sidebar:
     st.header("Chroniques ADES (3 points — même masse d'eau)")
     uploaded_file = st.file_uploader("Charger fichier ADES", type=["xlsx", "xls"])
-
     model_name = st.selectbox("Modèle", ["ETS", "ARIMA", "RandomForest", "XGBoost"])
     if model_name == "ETS":
         st.caption("ETS = univarié (chronique cible seule).")
@@ -27,6 +26,14 @@ with st.sidebar:
     validation_years = st.number_input("Années validation", value=5, min_value=1)
     ci_pct = st.slider("Intervalle de confiance (%)", 50, 99, 68)
     n_bootstraps = st.number_input("Bootstraps (RF/XGB)", value=200, min_value=10)
+
+    st.header("Injection Maîtrisée")
+    thickness = st.number_input("Épaisseur Aquifère (m)", value=10.0)
+    Q = st.number_input("Débit injecté (m³/jour)", value=0.0)
+    S = st.number_input("Coeff. Emmagasinement (S)", value=0.05, format="%.4f")
+    Area = st.number_input("Surface de l'ouvrage (m²)", value=100.0)
+    distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
+    K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
 
 # ── Chargement + sélection des 3 points ─────────────────────────────────
 if uploaded_file is not None:
@@ -262,14 +269,16 @@ if uploaded_file is not None:
                         c5.metric("Risque nappe", f"{indicators['risque']:.0f} %")
                         c6.metric("Temps recharge", f"{indicators['temps_rech']:.0f} j")
                             
-                with st.sidebar:
-                    st.header("Injection Maîtrisée")
-                    thickness = st.number_input("Épaisseur Aquifère (m)", value=10.0)
-                    Q = st.number_input("Débit injecté (m³/jour)", value=0.0)
-                    S = st.number_input("Coeff. Emmagasinement (S)", value=0.05, format="%.4f")
-                    Area = st.number_input("Surface de l'ouvrage (m²)", value=100.0)
-                    distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
-                    K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
+                # with st.sidebar:
+                #     st.header("Injection Maîtrisée")
+                #     thickness = st.number_input("Épaisseur Aquifère (m)", value=10.0)
+                #     Q = st.number_input("Débit injecté (m³/jour)", value=0.0)
+                #     S = st.number_input("Coeff. Emmagasinement (S)", value=0.05, format="%.4f")
+                #     Area = st.number_input("Surface de l'ouvrage (m²)", value=100.0)
+                #     distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
+                #     K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
+                    
+
 
 
 
