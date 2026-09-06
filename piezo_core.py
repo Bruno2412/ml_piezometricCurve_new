@@ -47,9 +47,9 @@ def find_column(df, aliases):
             return cols_lower[alias]
     return None
 
-
-def parse_multi_piezo_excel(df_raw):
-    """df_raw : DataFrame brut lu depuis le fichier Excel (déjà chargé)."""
+def parse_multi_piezo_excel(df_raw, min_points=3):
+    """df_raw : DataFrame brut lu depuis le fichier Excel (déjà chargé).
+    min_points : nombre minimal de points distincts requis (3 par défaut)."""
     if df_raw.shape[1] < 3:
         raise ValueError("Le fichier doit contenir au moins 3 colonnes : date / niveau / nom du point.")
     date_col  = find_column(df_raw, DATE_ALIASES)
@@ -74,9 +74,39 @@ def parse_multi_piezo_excel(df_raw):
         df['masse_eau'] = ''
     df = df.dropna(subset=['date', 'level', 'point']).sort_values(['point', 'date']).reset_index(drop=True)
     points = sorted(df['point'].unique().tolist())
-    if len(points) < 3:
-        raise ValueError(f"Seuls {len(points)} point(s) distinct(s) détecté(s) — 3 sont requis.")
+    if len(points) < min_points:
+        raise ValueError(f"Seuls {len(points)} point(s) distinct(s) détecté(s) — {min_points} minimum requis.")
     return df, points, (masse_col is not None)
+
+# def parse_multi_piezo_excel(df_raw):
+#     """df_raw : DataFrame brut lu depuis le fichier Excel (déjà chargé)."""
+#     if df_raw.shape[1] < 3:
+#         raise ValueError("Le fichier doit contenir au moins 3 colonnes : date / niveau / nom du point.")
+#     date_col  = find_column(df_raw, DATE_ALIASES)
+#     level_col = find_column(df_raw, LEVEL_ALIASES)
+#     point_col = find_column(df_raw, POINT_ALIASES)
+#     masse_col = find_column(df_raw, MASSE_EAU_ALIASES)
+#     if date_col is None or level_col is None or point_col is None:
+#         raise ValueError(
+#             f'Colonnes détectées : {list(df_raw.columns)}\n\n'
+#             f"Date : {date_col or '❌'}   Niveau : {level_col or '❌'}   Point : {point_col or '❌'}"
+#         )
+#     cols  = [date_col, level_col, point_col] + ([masse_col] if masse_col else [])
+#     names = ['date', 'level', 'point'] + (['masse_eau'] if masse_col else [])
+#     df = df_raw[cols].copy()
+#     df.columns = names
+#     df['date']  = pd.to_datetime(df['date'], errors='coerce')
+#     df['level'] = pd.to_numeric(df['level'], errors='coerce')
+#     df['point'] = df['point'].astype(str).str.strip()
+#     if 'masse_eau' in df.columns:
+#         df['masse_eau'] = df['masse_eau'].astype(str).str.strip()
+#     else:
+#         df['masse_eau'] = ''
+#     df = df.dropna(subset=['date', 'level', 'point']).sort_values(['point', 'date']).reset_index(drop=True)
+#     points = sorted(df['point'].unique().tolist())
+#     if len(points) < 3:
+#         raise ValueError(f"Seuls {len(points)} point(s) distinct(s) détecté(s) — 3 sont requis.")
+#     return df, points, (masse_col is not None)
 
 
 def align_chronicle(df_source, target_dates):
@@ -485,27 +515,6 @@ def parse_descriptif(path):
             'masse_eau': str(row.get("Masse(s) d'eau", '')).strip(),
         }
     return out
-
-# def parse_descriptif(path):
-#     """Lit le fichier descriptif ADES (pipe-séparé) et retourne un dict
-#     {identifiant_bss: {'lon', 'lat', 'name', 'masse_eau'}}."""
-#     df = pd.read_csv(path, sep='|', engine='python')
-#     df.columns = [c.strip() for c in df.columns]
-#     out = {}
-#     for _, row in df.iterrows():
-#         bss_id = str(row['Identifiant national BSS']).strip()
-#         try:
-#             lon = float(row['X_WGS84'])
-#             lat = float(row['Y_WGS84'])
-#         except (ValueError, TypeError):
-#             continue
-#         out[bss_id] = {
-#             'lon': lon,
-#             'lat': lat,
-#             'name': row.get('Dénomination', bss_id),
-#             'masse_eau': str(row.get("Masse(s) d'eau", '')).strip(),
-#         }
-#     return out
 
 
 def value_at_date(df, date):
