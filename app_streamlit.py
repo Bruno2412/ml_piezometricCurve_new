@@ -74,7 +74,7 @@ if uploaded_file is not None:
             if ok:
                 # ── Onglets ──────────────────────────────────────────────
                 #tab_reseau, tab_analyse = st.tabs(["🌊 Réseau Piézo", "📊 Analyse"])
-                tab_reseau, tab_analyse, tab_carte = st.tabs(
+                tab_reseau, tab_analyse, tab_carte, tab_twin = st.tabs(
                 ["🌊 Réseau Piézo", "📊 Analyse", "🗺️ Carte piézométrique", "🌐 Digital Twin"])
 
                 with tab_reseau:
