@@ -13,7 +13,7 @@ st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
 st.title("Expert Piézométrie Pro — Digital Twin")
 
 with st.sidebar:
-    st.header("Chroniques ADES (3 points — même masse d'eau)")
+    st.header("Chroniques (3 points — même masse d'eau)")
     uploaded_file = st.file_uploader("Charger fichier ADES", type=["xlsx", "xls"])
     model_name = st.selectbox("Modèle", ["ETS", "ARIMA", "RandomForest", "XGBoost"])
     if model_name == "ETS":
@@ -26,7 +26,7 @@ with st.sidebar:
     ci_pct = st.slider("Intervalle de confiance (%)", 50, 99, 68)
     n_bootstraps = st.number_input("Bootstraps (RF/XGB)", value=200, min_value=10)
 
-    st.header("Injection Maîtrisée")
+    st.header("Recharge Maîtrisée")
     thickness = st.number_input("Épaisseur Aquifère (m)", value=10.0)
     Q = st.number_input("Débit injecté (m³/jour)", value=0.0)
     S = st.number_input("Coeff. Emmagasinement (S)", value=0.05, format="%.4f")
