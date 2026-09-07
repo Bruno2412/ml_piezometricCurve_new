@@ -144,19 +144,23 @@ def parse_multi_piezo_excel(df_raw, min_points=3):
 
 def align_chronicle(df_source, target_dates):
     s = df_source.set_index('date')['level'].sort_index()
-    # Sécurité : moyenne des valeurs si plusieurs mesures partagent la même date
+    # 1. Sécurité sur la chronique source (déduplication par moyenne)
     if s.index.duplicated().any():
         s = s.groupby(level=0).mean()
 
+    # 2. Conversion et déduplication des dates cibles
     idx = pd.DatetimeIndex(pd.to_datetime(target_dates))
     idx_unique = idx.unique()
 
+    # 3. Alignement temporel sur l'union des dates
     combined = s.index.union(idx_unique)
     s_full = s.reindex(combined).astype(float).interpolate(method='time', limit_direction='both')
 
-    result = s_full.reindex(idx_unique)
-    # Remappe vers l'index d'origine (au cas où target_dates contiendrait aussi des doublons)
-    return result.reindex(idx).values
+    # 4. Extraction des valeurs pour les dates uniques
+    result_unique = s_full.reindex(idx_unique)
+
+    # 5. Mappage sécurisé vers l'index d'origine (gère les doublons sans crash `reindex`)
+    return result_unique.loc[idx].values
 
 
 def detect_frequency(dates):
