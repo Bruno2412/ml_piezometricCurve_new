@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+matplotlib
+scipy
+statsmodels
+scikit-learn
+folium
+streamlit-folium
+openpyxl
+python-dateutil
