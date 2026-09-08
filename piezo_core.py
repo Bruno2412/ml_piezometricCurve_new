@@ -21,6 +21,7 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
 from scipy.interpolate import griddata
 from matplotlib.patches import Circle
+from xgboost import XGBRegressor
 import matplotlib.pyplot as plt
 import unicodedata
 import io
@@ -429,8 +430,12 @@ class SklearnModel:
     def _make_model(self):
         if self.kind == 'RandomForest':
             return RandomForestRegressor(n_estimators=100, max_depth=6, random_state=42, n_jobs=-1)
-        return GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05,
-                                          subsample=0.8, random_state=42)
+        if self.kind == 'XGBoost':
+            return XGBRegressor(
+                n_estimators=200, max_depth=4, learning_rate=0.05,
+                subsample=0.8, random_state=42, n_jobs=-1
+            )
+        raise ValueError(f"Modèle sklearn/boosting inconnu : {self.kind}")
 
     def fit(self, df, aux_cols=None):
         aux_cols = aux_cols or []
