@@ -501,7 +501,7 @@ def fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, ets_typ
 
 
 def parse_descriptif(path):
-    """Lit le fichier descriptif ADES (pipe-séparé) depuis un chemin local.
+    """Lit le fichier descriptif (pipe-séparé) depuis un chemin local.
     Fonction pure, volontairement non mise en cache ici : le cache vit dans
     data_loader.load_descriptif(), calé sur le contenu du fichier uploadé
     plutôt que sur ce chemin temporaire (qui change à chaque exécution)."""

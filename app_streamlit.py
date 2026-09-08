@@ -24,7 +24,7 @@ st.title("Expert Piézométrie Pro — Digital Twin")
 
 with st.sidebar:
     st.header("Chroniques (3 points — même masse d'eau)")
-    uploaded_file = st.file_uploader("Charger fichier ADES", type=["xlsx", "xls"])
+    uploaded_file = st.file_uploader("Charger fichier", type=["xlsx", "xls"])
     model_name = st.selectbox("Modèle", ["ETS", "ARIMA", "RandomForest", "XGBoost"])
     if model_name == "ETS":
         st.caption("ETS = univarié (chronique cible seule).")
@@ -46,7 +46,7 @@ with st.sidebar:
 
 # ── Chargement + sélection des points ───────────────────────────────────
 if uploaded_file is None:
-    st.info("Chargez un fichier Excel ADES (3 points minimum) pour commencer.")
+    st.info("Chargez un fichier Excel (3 points minimum) pour commencer.")
     st.stop()
 
 df_raw = load_excel(uploaded_file)  # mis en cache : plus de rechargement à chaque interaction
