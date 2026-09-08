@@ -3,12 +3,6 @@
 Created on Sat Sep  5 14:52:26 2026
 
 @author: bruno
-
-Module de logique métier pure (parsing, calculs, modèles).
-Ne contient volontairement aucun appel Streamlit ni aucune lecture de
-fichier "brute" mise en cache : ces deux responsabilités vivent dans
-data/data_loader.py (voir séparation UI / data / logique demandée
-par l'audit Roast My Streamlit).
 """
 
 import numpy as np
@@ -65,14 +59,52 @@ def find_column(df, aliases):
             return cols_lower[alias]
     return None
 
+# def parse_multi_piezo_excel(df_raw, min_points=3):
+#     """df_raw : DataFrame brut lu depuis le fichier Excel (déjà chargé).
+#     min_points : nombre minimal de points distincts requis (3 par défaut)."""
+#     if df_raw.shape[1] < 3:
+#         raise ValueError("Le fichier doit contenir au moins 3 colonnes : date / niveau / nom du point.")
+#     date_col  = find_column(df_raw, DATE_ALIASES)
+#     level_col = find_column(df_raw, LEVEL_ALIASES)
+#     point_col = find_column(df_raw, POINT_ALIASES)
+#     masse_col = find_column(df_raw, MASSE_EAU_ALIASES)
+#     if date_col is None or level_col is None or point_col is None:
+#         raise ValueError(
+#             f'Colonnes détectées : {list(df_raw.columns)}\n\n'
+#             f"Date : {date_col or '❌'}   Niveau : {level_col or '❌'}   Point : {point_col or '❌'}"
+#         )
+#     cols  = [date_col, level_col, point_col] + ([masse_col] if masse_col else [])
+#     names = ['date', 'level', 'point'] + (['masse_eau'] if masse_col else [])
+#     df = df_raw[cols].copy()
+#     df.columns = names
+#     df['date']  = pd.to_datetime(df['date'], errors='coerce')
+#     df['level'] = pd.to_numeric(df['level'], errors='coerce')
+#     df['point'] = df['point'].astype(str).str.strip()
+#     if 'masse_eau' in df.columns:
+#         df['masse_eau'] = df['masse_eau'].astype(str).str.strip()
+#     else:
+#         df['masse_eau'] = ''
+#     df = df.dropna(subset=['date', 'level', 'point']).sort_values(['point', 'date']).reset_index(drop=True)
+#     df = df.groupby(['point', 'date'], as_index=False)['level'].mean()
+#     # Sécurité : déduplique les dates identiques par point (moyenne des niveaux),
+#     # nécessaire car reindex() exige un index de dates unique.
+#     masse_lookup = df.groupby('point')['masse_eau'].first()
+#     df = (
+#     df.groupby(['point', 'date'], as_index=False)['level']
+#     .mean()
+#     .merge(masse_lookup.rename('masse_eau'), on='point', how='left')
+# )
+#     points = sorted(df['point'].unique().tolist())
+#     if len(points) < min_points:
+#         raise ValueError(f"Seuls {len(points)} point(s) distinct(s) détecté(s) — {min_points} minimum requis.")
+#     return df, points, (masse_col is not None)
 
 def parse_multi_piezo_excel(df_raw, min_points=3):
-    """df_raw : DataFrame brut lu depuis le fichier Excel (déjà chargé,
-    idéalement via data_loader.load_excel() pour bénéficier du cache).
+    """df_raw : DataFrame brut lu depuis le fichier Excel (déjà chargé).
     min_points : nombre minimal de points distincts requis (3 par défaut)."""
     if df_raw.shape[1] < 3:
         raise ValueError("Le fichier doit contenir au moins 3 colonnes : date / niveau / nom du point.")
-    date_col = find_column(df_raw, DATE_ALIASES)
+    date_col  = find_column(df_raw, DATE_ALIASES)
     level_col = find_column(df_raw, LEVEL_ALIASES)
     point_col = find_column(df_raw, POINT_ALIASES)
     masse_col = find_column(df_raw, MASSE_EAU_ALIASES)
@@ -81,11 +113,11 @@ def parse_multi_piezo_excel(df_raw, min_points=3):
             f'Colonnes détectées : {list(df_raw.columns)}\n\n'
             f"Date : {date_col or '❌'}   Niveau : {level_col or '❌'}   Point : {point_col or '❌'}"
         )
-    cols = [date_col, level_col, point_col] + ([masse_col] if masse_col else [])
+    cols  = [date_col, level_col, point_col] + ([masse_col] if masse_col else [])
     names = ['date', 'level', 'point'] + (['masse_eau'] if masse_col else [])
     df = df_raw[cols].copy()
     df.columns = names
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    df['date']  = pd.to_datetime(df['date'], errors='coerce')
     df['level'] = pd.to_numeric(df['level'], errors='coerce')
     df['point'] = df['point'].astype(str).str.strip()
     if 'masse_eau' in df.columns:
@@ -112,33 +144,33 @@ def parse_multi_piezo_excel(df_raw, min_points=3):
 
 def align_chronicle(df_source, target_dates):
     s = df_source.set_index('date')['level'].sort_index()
+    # 1. Sécurité sur la chronique source (déduplication par moyenne)
     if s.index.duplicated().any():
         s = s.groupby(level=0).mean()
 
+    # 2. Conversion et déduplication des dates cibles
     idx = pd.DatetimeIndex(pd.to_datetime(target_dates))
     idx_unique = idx.unique()
 
+    # 3. Alignement temporel sur l'union des dates
     combined = s.index.union(idx_unique)
     s_full = s.reindex(combined).astype(float).interpolate(method='time', limit_direction='both')
 
+    # 4. Extraction des valeurs pour les dates uniques
     result_unique = s_full.reindex(idx_unique)
 
+    # 5. Mappage sécurisé vers l'index d'origine (gère les doublons sans crash `reindex`)
     return result_unique.loc[idx].values
 
 
 def detect_frequency(dates):
     diffs = dates.diff().dropna().dt.days
     median_diff = diffs.median()
-    if median_diff <= 1.5:
-        return 'D'
-    elif median_diff <= 8:
-        return 'W'
-    elif median_diff <= 35:
-        return 'MS'
-    elif median_diff <= 100:
-        return 'QS'
-    else:
-        return 'YS'
+    if median_diff <= 1.5:   return 'D'
+    elif median_diff <= 8:   return 'W'
+    elif median_diff <= 35:  return 'MS'
+    elif median_diff <= 100: return 'QS'
+    else:                    return 'YS'
 
 
 def freq_to_seasonal_periods(freq):
@@ -152,12 +184,12 @@ def future_steps(freq, years):
 
 def make_features(dates):
     df = pd.DataFrame({'date': pd.to_datetime(dates)})
-    df['t'] = (df['date'] - df['date'].min()).dt.days
-    df['month'] = df['date'].dt.month
+    df['t']         = (df['date'] - df['date'].min()).dt.days
+    df['month']     = df['date'].dt.month
     df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
     df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
-    df['year'] = df['date'].dt.year
-    df['quarter'] = df['date'].dt.quarter
+    df['year']      = df['date'].dt.year
+    df['quarter']   = df['date'].dt.quarter
     return df.drop(columns=['date'])
 
 
@@ -187,7 +219,6 @@ def calculate_spatial_impact(Q, S, K, thickness, distance, time_days, Area):
         impact = (Q / (4 * np.pi * T)) * exp1(u)
     return max(0, impact)
 
-
 def surface_to_png_overlay(GLon, GLat, GZ, cmap='Blues_r', alpha=0.75):
     """Convertit une grille interpolée en image PNG transparente,
     exploitable comme overlay Folium. Retourne (png_bytes, bounds)."""
@@ -204,11 +235,11 @@ def surface_to_png_overlay(GLon, GLat, GZ, cmap='Blues_r', alpha=0.75):
     bounds = [[GLat.min(), GLon.min()], [GLat.max(), GLon.max()]]
     return buf.getvalue(), bounds
 
-
 # ─── Digital Twin — carte Theis 2D ──────────────────────────────────────
 
 def draw_nappe_2d_figure(Q, S, K, thickness, distance, time_days, Area, niveau_base=0.0):
-    """Reconstruit la carte Theis 2D, retourne une figure matplotlib prête pour st.pyplot()."""
+    """Reconstruit la carte Theis 2D (équivalent de _draw_nappe_2d Tkinter),
+    retourne une figure matplotlib prête pour st.pyplot()."""
     fig, ax = plt.subplots(figsize=(7, 6))
 
     size = max(distance * 3, 200)
@@ -247,12 +278,12 @@ def draw_nappe_2d_figure(Q, S, K, thickness, distance, time_days, Area, niveau_b
     if T > 0 and S > 0 and time_days > 0 and Q > 0:
         r_inf = min(size * 0.95, np.sqrt(4 * T * time_days / S) * 2)
         ax.add_patch(Circle((0, 0), r_inf, color='#20c997', fill=False,
-                             linestyle='--', linewidth=1.4, alpha=0.8, zorder=5,
-                             label=f"R influence ≈{r_inf:.0f} m"))
+                            linestyle='--', linewidth=1.4, alpha=0.8, zorder=5,
+                            label=f"R influence ≈{r_inf:.0f} m"))
 
     ax.plot(distance, 0, '^', color='#ffc107', ms=10, zorder=8, label=f'Piézomètre ({distance:.0f} m)')
     ax.annotate(f' Piézo\n {distance:.0f} m', (distance, 0), fontsize=7,
-                xytext=(distance + size * 0.05, size * 0.08))
+               xytext=(distance + size * 0.05, size * 0.08))
 
     ax.set_xlim(-size, size)
     ax.set_ylim(-size, size)
@@ -277,7 +308,7 @@ def response_curve_data(Q, S, K, thickness, distance, Area, t_max, niveau_base):
 
 
 def compute_dashboard_indicators(df, freq, Q, S, K, thickness, distance, Area):
-    """Reconstruit les indicateurs du dashboard."""
+    """Reconstruit les indicateurs du dashboard Tkinter (_compute_and_update_dashboard)."""
     niveau_actuel = df['level'].iloc[-1]
     n_30 = min(30, len(df) - 1)
     variation_30j = df['level'].iloc[-1] - df['level'].iloc[-1 - n_30]
@@ -313,8 +344,7 @@ def compute_dashboard_indicators(df, freq, Q, S, K, thickness, distance, Area):
         'temps_rech': temps_rech,
     }
 
-
-# ─── Modèles ─────────────────────────────────────────────────────────────
+# ─── Modèles (copiés tels quels depuis ton fichier Tkinter) ────────────────
 
 class ETSModel:
     def __init__(self, ets_type, seasonal_periods, ci_level):
@@ -347,7 +377,7 @@ class ETSModel:
 
 
 class ARIMAModel:
-    CANDIDATES = [(1, 1, 1), (1, 1, 0), (0, 1, 1), (2, 1, 1), (1, 1, 2), (2, 1, 2), (0, 1, 2), (2, 1, 0)]
+    CANDIDATES = [(1,1,1),(1,1,0),(0,1,1),(2,1,1),(1,1,2),(2,1,2),(0,1,2),(2,1,0)]
 
     def __init__(self, seasonal_periods, ci_level):
         self.sp = seasonal_periods
@@ -387,14 +417,14 @@ class ARIMAModel:
         for p, _, q in self.CANDIDATES:
             try:
                 if sp > 1:
-                    m = SARIMAX(y, exog=exog, order=(p, d, q), seasonal_order=(1, 1, 1, sp),
-                                enforce_stationarity=False, enforce_invertibility=False)
+                    m = SARIMAX(y, exog=exog, order=(p,d,q), seasonal_order=(1,1,1,sp),
+                               enforce_stationarity=False, enforce_invertibility=False)
                 else:
-                    m = SARIMAX(y, exog=exog, order=(p, d, q),
-                                enforce_stationarity=False, enforce_invertibility=False)
+                    m = SARIMAX(y, exog=exog, order=(p,d,q),
+                               enforce_stationarity=False, enforce_invertibility=False)
                 res = m.fit(disp=False, maxiter=200)
                 if res.aic < best_aic:
-                    best_aic, best_res, self.order_ = res.aic, res, (p, d, q)
+                    best_aic, best_res, self.order_ = res.aic, res, (p,d,q)
             except Exception:
                 continue
         if best_res is None:
@@ -430,7 +460,7 @@ class SklearnModel:
         if self.kind == 'RandomForest':
             return RandomForestRegressor(n_estimators=100, max_depth=6, random_state=42, n_jobs=-1)
         return GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05,
-                                          subsample=0.8, random_state=42)
+                                         subsample=0.8, random_state=42)
 
     def fit(self, df, aux_cols=None):
         aux_cols = aux_cols or []
@@ -501,10 +531,6 @@ def fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, ets_typ
 
 
 def parse_descriptif(path):
-    """Lit le fichier descriptif ADES (pipe-séparé) depuis un chemin local.
-    Fonction pure, volontairement non mise en cache ici : le cache vit dans
-    data_loader.load_descriptif(), calé sur le contenu du fichier uploadé
-    plutôt que sur ce chemin temporaire (qui change à chaque exécution)."""
     df = None
     last_error = None
     for encoding in ('utf-8-sig', 'cp1252', 'latin-1'):
@@ -512,7 +538,7 @@ def parse_descriptif(path):
             df = pd.read_csv(
                 path, sep='|', engine='python', encoding=encoding,
                 dtype=str,
-                quoting=csv.QUOTE_NONE,   # le | est le seul séparateur, jamais le "
+                quoting=csv.QUOTE_NONE,   # <-- clé : le | est le seul séparateur, jamais le "
             )
             break
         except (UnicodeDecodeError, UnicodeError) as e:
@@ -543,6 +569,39 @@ def parse_descriptif(path):
     return out
 
 
+# def parse_descriptif(path):
+#     """Lit le fichier descriptif ADES (pipe-séparé) et retourne un dict
+#     {identifiant_bss: {'lon', 'lat', 'name', 'masse_eau'}}."""
+#     df = None
+#     last_error = None
+#     for encoding in ('utf-8', 'latin-1', 'cp1252'):
+#         try:
+#             df = pd.read_csv(path, sep='|', engine='python', encoding=encoding)
+#             break
+#         except (UnicodeDecodeError, UnicodeError) as e:
+#             last_error = e
+#             continue
+#     if df is None:
+#         raise ValueError(f"Impossible de décoder le fichier (essayé utf-8/latin-1/cp1252) : {last_error}")
+
+#     df.columns = [c.strip() for c in df.columns]
+#     out = {}
+#     for _, row in df.iterrows():
+#         bss_id = str(row['Identifiant national BSS']).strip()
+#         try:
+#             lon = float(row['X_WGS84'])
+#             lat = float(row['Y_WGS84'])
+#         except (ValueError, TypeError):
+#             continue
+#         out[bss_id] = {
+#             'lon': lon,
+#             'lat': lat,
+#             'name': row.get('Dénomination', bss_id),
+#             'masse_eau': str(row.get("Masse(s) d'eau", '')).strip(),
+#         }
+#     return out
+
+
 def value_at_date(df, date):
     """Valeur interpolée d'une chronique à une date donnée (méthode temporelle)."""
     s = df.set_index('date')['level'].sort_index()
@@ -553,7 +612,10 @@ def value_at_date(df, date):
 
 
 def build_piezo_surface(coords, values, n=120, margin_ratio=0.3):
-    """Interpole une surface piézométrique linéaire entre 3 points (ou plus)."""
+    """Interpole une surface piézométrique linéaire entre 3 points (ou plus).
+    coords : liste de dicts avec 'lon'/'lat'. values : niveaux correspondants.
+    Retourne (grille_lon, grille_lat, grille_niveaux) — NaN hors du triangle formé
+    par les points (limite intrinsèque d'une interpolation à seulement 3 points)."""
     lons = np.array([c['lon'] for c in coords])
     lats = np.array([c['lat'] for c in coords])
     vals = np.array(values, dtype=float)
@@ -561,9 +623,9 @@ def build_piezo_surface(coords, values, n=120, margin_ratio=0.3):
     span_lon = lons.max() - lons.min() or 0.01
     span_lat = lats.max() - lats.min() or 0.01
     grid_lon = np.linspace(lons.min() - span_lon * margin_ratio,
-                            lons.max() + span_lon * margin_ratio, n)
+                           lons.max() + span_lon * margin_ratio, n)
     grid_lat = np.linspace(lats.min() - span_lat * margin_ratio,
-                            lats.max() + span_lat * margin_ratio, n)
+                           lats.max() + span_lat * margin_ratio, n)
     GLon, GLat = np.meshgrid(grid_lon, grid_lat)
     GZ = griddata((lons, lats), vals, (GLon, GLat), method='linear')
     return GLon, GLat, GZ
