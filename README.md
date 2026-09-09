@@ -4,6 +4,8 @@ Application Streamlit dédiée à l'analyse, la modélisation et la visualisatio
 
 L'application permet d'explorer des données piézométriques, d'analyser les relations entre plusieurs points de mesure, de produire des cartes piézométriques et de réaliser des prévisions à l'aide de plusieurs modèles statistiques et de machine learning.
 
+Ajout d'une authentification par user et par entreprise'
+
 ## Fonctionnalités
 
 - Import de chroniques piézométriques au format Excel
