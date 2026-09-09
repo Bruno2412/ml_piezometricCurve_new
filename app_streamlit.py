@@ -7,7 +7,7 @@ import os
 import streamlit as st
 
 import piezo_core as core
-from data.data_loader import load_excel, load_descriptif
+from data.data_loader import load_excel, load_chroniques, load_descriptif, load_masses_eau
 from components import tab_reseau, tab_analyse, tab_carte, tab_twin
 
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
@@ -17,7 +17,8 @@ st.title("Expert Piézométrie Pro — Digital Twin")
 with st.sidebar:
     st.header("Chroniques (3 points — même masse d'eau)")
     uploaded_files = st.file_uploader(
-        "Charger fichiers ADES (chronique Excel + descriptif .txt)",
+        "Charger l'export ADES : chroniques.txt, descriptif.txt, "
+        "MassesEau.txt (ou un Excel de chroniques déjà préparé)",
         type=["xlsx", "xls", "txt"],
         accept_multiple_files=True,
     )
@@ -40,51 +41,70 @@ with st.sidebar:
     distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
     K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
 
-# ── Extraction des fichiers uploadés ─────────────────────────────────────
-excel_file, descriptif_file = None, None
+# ── Extraction des fichiers uploadés (routage par nom, convention ADES) ──
+excel_file, chroniques_file, descriptif_file, masses_eau_file = None, None, None, None
 for f in uploaded_files or []:
-    ext = f.name.rsplit('.', 1)[-1].lower()
-    if ext in ('xlsx', 'xls'):
+    fname = f.name.strip().lower()
+    if fname.endswith(('.xlsx', '.xls')):
         excel_file = f
-    elif ext == 'txt':
+    elif fname == 'chroniques.txt':
+        chroniques_file = f
+    elif fname == 'descriptif.txt':
         descriptif_file = f
+    elif fname == 'masseseau.txt':
+        masses_eau_file = f
 
-# ── Traitement principal si un fichier Excel est chargé ──────────────────
-if excel_file is not None:
-    # 1. Chargement du fichier Excel
+# ── Traitement principal si des chroniques sont chargées ─────────────────
+if chroniques_file is not None or excel_file is not None:
+    # 1. Chargement des chroniques : export ADES brut en priorité,
+    #    sinon Excel déjà préparé (compatibilité ascendante)
     try:
-        df_raw, _file_name = load_excel(excel_file)
+        if chroniques_file is not None:
+            df_raw, _file_name = load_chroniques(chroniques_file)
+        else:
+            df_raw, _file_name = load_excel(excel_file)
     except Exception as e:
-        st.error(f"Erreur lors de la lecture du fichier Excel : {e}")
+        st.error(f"Erreur lors de la lecture des chroniques : {e}")
         st.stop()
 
-    # 2. Chargement du descriptif (Upload prioritaire > Fichier Local/Relative)
+    # 2. Chargement du descriptif (coordonnées + nom) et de MassesEau.txt
+    #    (libellé fiable de la masse d'eau, plus complet que le code brut
+    #    présent dans descriptif.txt)
     coords_dict = {}
     if descriptif_file is not None:
         try:
             coords_dict = load_descriptif(descriptif_file.getvalue())
-            st.sidebar.success(f"✓ Descriptif chargé via navigateur ({len(coords_dict)} points)")
+            st.sidebar.success(f"✓ Descriptif chargé ({len(coords_dict)} points)")
         except Exception as e:
-            st.sidebar.error(f"Erreur lecture descriptif chargé : {e}")
+            st.sidebar.error(f"Erreur lecture descriptif : {e}")
+    else:
+        st.sidebar.info("Pas de descriptif.txt fourni — la carte sera limitée.")
 
-    if not coords_dict:
-        local_default = r"C:\Users\bruno.DESKTOP-I2NE6NI\OneDrive\Bureau\Projet_Courbes_piezo\chroniques_2\ades_export\Descriptif\descriptif.txt"
-        relative_default = os.path.join("data", "descriptif.txt")
-        
-        target = local_default if os.path.exists(local_default) else (relative_default if os.path.exists(relative_default) else None)
-        if target:
-            try:
-                with open(target, "rb") as f:
-                    coords_dict = load_descriptif(f.read())
-                st.sidebar.success(f"✓ Descriptif chargé automatiquement ({len(coords_dict)} points)")
-            except Exception as e:
-                st.sidebar.warning(f"Impossible de lire le descriptif par défaut : {e}")
-        else:
-            st.sidebar.info("Pas de fichier descriptif fourni — la carte sera limitée.")
+    masses_eau_dict = {}
+    if masses_eau_file is not None:
+        try:
+            masses_eau_dict = load_masses_eau(masses_eau_file.getvalue())
+            st.sidebar.success(f"✓ MassesEau.txt chargé ({len(masses_eau_dict)} points)")
+        except Exception as e:
+            st.sidebar.warning(f"Impossible de lire MassesEau.txt : {e}")
 
-    # 3. Parsing du fichier Excel
+    if masses_eau_dict:
+        # Remplace le code brut ('V5#DG240') par le libellé complet et
+        # fiable dans les infobulles de la carte.
+        for bss_id, label in masses_eau_dict.items():
+            if bss_id in coords_dict:
+                coords_dict[bss_id]['masse_eau'] = label
+
+    # 3. Parsing des chroniques
     try:
         source_df, points, has_masse = core.parse_multi_piezo_excel(df_raw)
+        if masses_eau_dict:
+            # chroniques.txt seul ne contient pas la masse d'eau : on
+            # l'injecte ici depuis MassesEau.txt, par point (BSS id).
+            source_df['masse_eau'] = (
+                source_df['point'].map(masses_eau_dict).fillna(source_df['masse_eau'])
+            )
+            has_masse = source_df['masse_eau'].str.len().gt(0).any()
         st.sidebar.success(f"✓ {len(points)} points détectés" + ("" if has_masse else " (⚠ pas de masse d'eau)"))
     except Exception as e:
         st.sidebar.error(f"Erreur parsing : {e}")
@@ -166,4 +186,8 @@ if excel_file is not None:
                     )
 
 else:
-    st.info("👋 Bienvenue. Veuillez charger un fichier Excel ADES dans le menu latéral pour démarrer l'analyse.")
+    st.info(
+        "👋 Bienvenue. Charge chroniques.txt (+ descriptif.txt et "
+        "MassesEau.txt si disponibles) dans le menu latéral pour démarrer "
+        "l'analyse — ou un Excel de chroniques déjà préparé."
+    )
