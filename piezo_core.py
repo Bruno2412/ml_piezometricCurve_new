@@ -59,6 +59,13 @@ def _clean_str(s):
     return s.strip()
 
 
+def _strip_accents(s):
+    """Normalise en minuscules sans accents (ex. 'Interprété' -> 'interprete'),
+    pour comparer des libellés ADES sans dépendre de leur orthographe exacte."""
+    s = unicodedata.normalize('NFKD', _clean_str(s).lower())
+    return ''.join(c for c in s if not unicodedata.combining(c))
+
+
 def find_column(df, aliases):
     cols_lower = {c.lower().strip(): c for c in df.columns}
     for alias in aliases:
@@ -505,11 +512,12 @@ def fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, ets_typ
     return np.array(pred), np.array(lo), np.array(hi)
 
 
-def parse_descriptif(path):
-    """Lit le fichier descriptif (pipe-séparé) depuis un chemin local.
-    Fonction pure, volontairement non mise en cache ici : le cache vit dans
-    data_loader.load_descriptif(), calé sur le contenu du fichier uploadé
-    plutôt que sur ce chemin temporaire (qui change à chaque exécution)."""
+def _read_ades_pipe_file(path):
+    """Lit un fichier d'export ADES pipe-séparé (descriptif.txt, chroniques.txt,
+    MassesEau.txt, ...) depuis un chemin local, en essayant plusieurs encodages
+    usuels. Fonction pure, volontairement non mise en cache ici : le cache vit
+    dans data_loader.py, calé sur le contenu du fichier uploadé plutôt que sur
+    ce chemin temporaire (qui change à chaque exécution)."""
     df = None
     last_error = None
     for encoding in ('utf-8-sig', 'cp1252', 'latin-1'):
@@ -525,8 +533,15 @@ def parse_descriptif(path):
             continue
     if df is None:
         raise ValueError(f"Impossible de décoder le fichier : {last_error}")
-
     df.columns = [_clean_str(c) for c in df.columns]
+    return df
+
+
+def parse_descriptif(path):
+    """Lit descriptif.txt (pipe-séparé) et retourne, par point,
+    coordonnées + nom + code masse d'eau brut (ex. 'V5#DG240' — voir
+    parse_masses_eau() pour le libellé complet et fiable)."""
+    df = _read_ades_pipe_file(path)
     if 'Identifiant national BSS' not in df.columns:
         raise ValueError(f"Colonne ID introuvable. Colonnes lues : {list(df.columns)}")
 
@@ -545,6 +560,58 @@ def parse_descriptif(path):
             'name': _clean_str(row.get('Dénomination', bss_id)),
             'masse_eau': _clean_str(row.get("Masse(s) d'eau", '')),
         }
+    return out
+
+
+def parse_chroniques_raw(path):
+    """Lit chroniques.txt (export ADES brut, pipe-séparé) et retourne le
+    DataFrame brut avec ses colonnes d'origine (« Identifiant national BSS »,
+    « Date de la mesure », « Côte NGF », ...), pour que
+    parse_multi_piezo_excel() les identifie ensuite via find_column()."""
+    return _read_ades_pipe_file(path)
+
+
+_QUALITE_ASSOCIATION_RANK = {
+    'bonne': 3,
+    'interprete': 2,
+    'incertaine': 1,
+    '': 0,
+}
+
+
+def parse_masses_eau(path):
+    """Lit MassesEau.txt (pipe-séparé) et retourne, pour chaque point
+    (Identifiant national BSS), le libellé complet de la masse d'eau le plus
+    fiable : la meilleure « Qualité association » disponible, puis
+    l'association la plus récente en cas d'égalité. Un même point a souvent
+    plusieurs lignes dans ce fichier (historique des associations)."""
+    df = _read_ades_pipe_file(path)
+    required = {'Identifiant national BSS', 'Masse eau'}
+    if not required.issubset(df.columns):
+        raise ValueError(
+            f"Colonnes attendues introuvables ({required}). "
+            f"Colonnes lues : {list(df.columns)}"
+        )
+
+    df = df.copy()
+    df['_qualite_rank'] = df.get('Qualité association', '').map(
+        lambda q: _QUALITE_ASSOCIATION_RANK.get(_strip_accents(q), 0)
+    )
+    df['_date_asso'] = pd.to_datetime(
+        df.get('Date de début association'), format='%d/%m/%Y', errors='coerce'
+    )
+
+    out = {}
+    for bss_id, group in df.groupby('Identifiant national BSS'):
+        bss_id = _clean_str(bss_id)
+        if not bss_id:
+            continue
+        best = group.sort_values(
+            ['_qualite_rank', '_date_asso'], ascending=[False, False]
+        ).iloc[0]
+        label = _clean_str(best['Masse eau'])
+        if label:
+            out[bss_id] = label
     return out
 
 
