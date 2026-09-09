@@ -4,6 +4,7 @@
 Chargements de données mis en cache pour Streamlit.
 """
 
+import io
 import os
 import tempfile
 
@@ -27,40 +28,70 @@ def _parse_from_bytes(file_bytes: bytes, parse_fn):
         os.remove(tmp_path)
 
 @st.cache_data(show_spinner="Lecture des chroniques...")
-def load_chroniques_auto(uploaded_file) -> tuple[pd.DataFrame, str]:
-    """
-    Charge automatiquement une chronique ADES en TXT
-    ou un fichier Excel de chroniques préparé.
-
-    Retourne toujours :
-        df, file_name
-    """
-
-    if uploaded_file is None:
-        raise ValueError("Aucun fichier de chroniques fourni.")
-
+def load_chroniques_auto(uploaded_file):
     file_name = getattr(uploaded_file, "name", str(uploaded_file))
     extension = os.path.splitext(file_name)[1].lower()
 
     if extension == ".txt":
-
-        df = _parse_from_bytes(
-            uploaded_file.getvalue(),
-            core.parse_chroniques_raw
+        # Lecture du fichier texte séparé par des tabulations
+        df = pd.read_csv(
+            io.BytesIO(uploaded_file.getvalue()),
+            sep="\t",  # Séparateur tabulation utilisé par ces fichiers
+            encoding="utf-8",  # Essaye "latin-1" si problème d'accents
         )
 
     elif extension in (".xlsx", ".xls"):
-
         df = pd.read_excel(uploaded_file)
 
     else:
+        raise ValueError(f"Format non supporté : {extension}")
 
-        raise ValueError(
-            f"Format non supporté : {extension}. "
-            "Formats acceptés : .txt, .xlsx, .xls"
+    # --- Nettoyage et typage indispensable pour les courbes piézo ---
+
+    # 1. Nettoyage des noms de colonnes (supprime les espaces superflus)
+    df.columns = df.columns.str.strip()
+
+    # 2. Conversion de la date
+    if "Date de la mesure" in df.columns:
+        df["Date de la mesure"] = pd.to_datetime(
+            df["Date de la mesure"], format="%d/%m/%Y %H:%M", errors="coerce"
         )
 
+    # 3. Conversion numérique des valeurs piézométriques (Côte NGF / Profondeur)
+    cols_numeriques = [
+        "Côte NGF",
+        "Profondeur relative/repère de mesure",
+        "X_WGS84",
+        "Y_WGS84",
+    ]
+    for col in cols_numeriques:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # 4. Tri par date pour éviter les lignes cassées sur le graphique
+    if "Date de la mesure" in df.columns:
+        df = df.sort_values("Date de la mesure")
+
     return df, file_name
+
+# @st.cache_data(show_spinner="Lecture des chroniques...")
+# def load_chroniques_auto(uploaded_file):
+#     file_name = getattr(uploaded_file, "name", str(uploaded_file))
+#     extension = os.path.splitext(file_name)[1].lower()
+
+#     if extension == ".txt":
+#         df = _parse_from_bytes(
+#             uploaded_file.getvalue(),
+#             core.parse_chroniques_raw
+#         )
+
+#     elif extension in (".xlsx", ".xls"):
+#         df = pd.read_excel(uploaded_file)
+
+#     else:
+#         raise ValueError(f"Format non supporté : {extension}")
+
+#     return df, file_name
 
 
 @st.cache_data(show_spinner="Lecture du fichier Excel ...")
