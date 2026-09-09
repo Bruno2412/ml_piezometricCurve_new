@@ -8,26 +8,17 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 import piezo_core as core
-from data.data_loader import load_descriptif
 
 
-def render(selection, chronicles):
+def render(selection, chronicles, coords_dict):
     st.subheader("Carte piézométrique évolutive")
 
-    descriptif_file = st.file_uploader(
-        "Sélectionner le fichier descriptif ADES", type=["txt"]
-    )
-
-    if descriptif_file is not None:
-        st.success(f"Fichier sélectionné : {descriptif_file.name}")
-        try:
-            coords_dict = load_descriptif(descriptif_file.getvalue())
-        except Exception as e:
-            st.error(f"Impossible de lire le fichier descriptif : {e}")
-            coords_dict = {}
-    else:
-        st.info("Veuillez sélectionner le fichier descriptif ADES.")
-        coords_dict = {}
+    if not coords_dict:
+        st.info(
+            "Aucun fichier descriptif chargé — charge-le en même temps "
+            "que le fichier Excel, dans la barre latérale."
+        )
+        return
 
     missing = [name for name in selection if name.strip() not in coords_dict]
     available = [name for name in selection if name.strip() in coords_dict]
@@ -105,5 +96,4 @@ def render(selection, chronicles):
         f"⚠️ Interpolation linéaire entre {len(available)} point(s) — "
         "la surface colorée n'est valide qu'à l'intérieur du polygone "
         "formé par les points disponibles, et reste une approximation "
-        "grossière comparée à un krigeage sur un réseau plus dense."
-    )
+        "grossière
