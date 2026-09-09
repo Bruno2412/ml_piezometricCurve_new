@@ -33,12 +33,22 @@ def load_chroniques_auto(uploaded_file):
     extension = os.path.splitext(file_name)[1].lower()
 
     if extension == ".txt":
-        # Lecture du fichier texte séparé par des tabulations
-        df = pd.read_csv(
-            io.BytesIO(uploaded_file.getvalue()),
-            sep="\t",  # Séparateur tabulation utilisé par ces fichiers
-            encoding="utf-8",  # Essaye "latin-1" si problème d'accents
-        )
+        raw_bytes = uploaded_file.getvalue()
+
+        # Essai d'encodage utf-8 puis latin-1 (très fréquent sur les fichiers ADES/BRGM)
+        for enc in ["utf-8", "latin-1", "cp1252"]:
+            try:
+                df = pd.read_csv(
+                    io.BytesIO(raw_bytes),
+                    sep="\t",  # Séparateur tabulation
+                    decimal=",",  # <--- Gère directement les virgules comme séparateur décimal
+                    encoding=enc,
+                )
+                # Si les colonnes ont bien été découpées, on valide la lecture
+                if len(df.columns) > 1:
+                    break
+            except Exception:
+                continue
 
     elif extension in (".xlsx", ".xls"):
         df = pd.read_excel(uploaded_file)
@@ -46,18 +56,10 @@ def load_chroniques_auto(uploaded_file):
     else:
         raise ValueError(f"Format non supporté : {extension}")
 
-    # --- Nettoyage et typage indispensable pour les courbes piézo ---
+    # 1. Nettoyage des entêtes de colonnes
+    df.columns = df.columns.astype(str).str.strip()
 
-    # 1. Nettoyage des noms de colonnes (supprime les espaces superflus)
-    df.columns = df.columns.str.strip()
-
-    # 2. Conversion de la date
-    if "Date de la mesure" in df.columns:
-        df["Date de la mesure"] = pd.to_datetime(
-            df["Date de la mesure"], format="%d/%m/%Y %H:%M", errors="coerce"
-        )
-
-    # 3. Conversion numérique des valeurs piézométriques (Côte NGF / Profondeur)
+    # 2. Nettoyage explicite des virgules vers points sur les colonnes numériques (au cas où)
     cols_numeriques = [
         "Côte NGF",
         "Profondeur relative/repère de mesure",
@@ -66,11 +68,20 @@ def load_chroniques_auto(uploaded_file):
     ]
     for col in cols_numeriques:
         if col in df.columns:
+            if df[col].dtype == "object":
+                # Remplacement explicite des virgules par des points
+                df[col] = df[col].astype(str).str.replace(",", ".")
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # 4. Tri par date pour éviter les lignes cassées sur le graphique
+    # 3. Conversion de la date (dayfirst=True pour le format français JJ/MM/AAAA)
     if "Date de la mesure" in df.columns:
-        df = df.sort_values("Date de la mesure")
+        df["Date de la mesure"] = pd.to_datetime(
+            df["Date de la mesure"], dayfirst=True, errors="coerce"
+        )
+        # Supprime les lignes où la date n'a pas pu être lue et trie chronologiquement
+        df = df.dropna(subset=["Date de la mesure"]).sort_values(
+            "Date de la mesure"
+        )
 
     return df, file_name
 
