@@ -8,6 +8,9 @@ import streamlit as st
 
 import piezo_core as core
 
+@st.cache_data(show_spinner="Calcul de la validation en cours…")
+def cached_fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, n_bootstraps):
+    return core.fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, n_bootstraps=n_bootstraps)
 
 def render(chronicles, selection, target_name, model_name,
            future_years, validation_years, ci_pct, n_bootstraps):
@@ -93,9 +96,8 @@ def render(chronicles, selection, target_name, model_name,
     # --- 8. Fit + predict sur la période de validation ---
     try:
         with st.spinner("Calcul de la validation en cours…"):
-            p_val, lo_v, hi_v = core.fit_predict(
-                df_train, v_steps, df_val['date'], model_name, freq, ci_level,
-                n_bootstraps=n_bootstraps
+            p_val, lo_v, hi_v = cached_fit_predict(
+                df_train, v_steps, df_val['date'], model_name, freq, ci_level, n_bootstraps
             )
     except Exception as e:
         st.error(f"❌ Erreur dans fit_predict() pendant la validation : {e}")
@@ -116,9 +118,8 @@ def render(chronicles, selection, target_name, model_name,
     # --- 10. Fit + predict sur la période future ---
     try:
         with st.spinner("Calcul des prévisions futures en cours…"):
-            p_fut, lo_f, hi_f = core.fit_predict(
-                merged, fut_s, pd.Series(fut_dates), model_name, freq, ci_level,
-                n_bootstraps=n_bootstraps
+            p_fut, lo_f, hi_f = cached_fit_predict(
+                merged, fut_s, pd.Series(fut_dates), model_name, freq, ci_level, n_bootstraps
             )
     except Exception as e:
         st.error(f"❌ Erreur dans fit_predict() pour les prévisions futures : {e}")
