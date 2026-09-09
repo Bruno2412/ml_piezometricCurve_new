@@ -8,7 +8,7 @@ import piezo_core as core
 
 
 def render(chronicles):
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6.5))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20, 6.5))
     cmap = plt.get_cmap('tab10')
     colors = {i: cmap((i - 1) % 10) for i in chronicles.keys()}
     for i, c in chronicles.items():
