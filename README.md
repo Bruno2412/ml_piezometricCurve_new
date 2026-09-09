@@ -45,3 +45,51 @@ ml_piezometricCurve_new/
 ├── requirements.txt
 ├── README.md
 └── .gitignore
+
+J'aimerais aller vers cette architecture
+
+ml_piezometricCurve_new/
+│
+├── app_streamlit.py              ← point d'entrée
+│
+├── auth/
+│   ├── __init__.py
+│   ├── authentication.py         ← connexion / session
+│   └── permissions.py             ← droits utilisateur
+│
+├── components/
+│   ├── tab_reseau.py
+│   ├── tab_analyse.py
+│   ├── tab_carte.py
+│   ├── tab_twin.py
+│   ├── login.py
+│   └── project_selector.py
+│
+├── data/
+│   ├── data_loader.py
+│   ├── validators.py
+│   └── storage.py
+│
+├── database/
+│   ├── models.py
+│   ├── repository.py
+│   └── connection.py
+│
+├── services/
+│   ├── project_service.py
+│   ├── chronology_service.py
+│   └── analysis_service.py
+│
+├── piezo_core.py
+│
+├── tests/
+│   ├── test_parser.py
+│   ├── test_chroniques.py
+│   └── test_models.py
+│
+├── .streamlit/
+│   └── config.toml
+│
+├── README.md
+├── pyproject.toml
+└── requirements.txt'
