@@ -125,4 +125,4 @@ if ok and has_masse:
             f"✓ Même masse d'eau : {list(chronicles.values())[0]['masse_eau']}"
         )
 elif ok:
-    st.sidebar.warning("Masse d'eau non renseignée — à vérifier
+    st.sidebar.warning("Masse d'eau non renseignée — à vérifier")
