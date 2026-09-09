@@ -96,4 +96,4 @@ def render(selection, chronicles, coords_dict):
         f"⚠️ Interpolation linéaire entre {len(available)} point(s) — "
         "la surface colorée n'est valide qu'à l'intérieur du polygone "
         "formé par les points disponibles, et reste une approximation "
-        "grossière
+        "grossière")
