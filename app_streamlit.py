@@ -15,7 +15,7 @@ propre module — cf. rapport d'audit "fichier Streamlit monolithique".
 import streamlit as st
 
 import piezo_core as core
-from data.data_loader import load_excel
+from data.data_loader import load_excel, load_descriptif
 from components import tab_reseau, tab_analyse, tab_carte, tab_twin
 
 
@@ -24,7 +24,11 @@ st.title("Expert Piézométrie Pro — Digital Twin")
 
 with st.sidebar:
     st.header("Chroniques (3 points — même masse d'eau)")
-    uploaded_file = st.file_uploader("Charger fichier", type=["xlsx", "xls"])
+    uploaded_files = st.file_uploader(
+        "Charger fichiers ADES (chronique Excel + descriptif .txt)",
+        type=["xlsx", "xls", "txt"],
+        accept_multiple_files=True,
+    )
     model_name = st.selectbox("Modèle", ["ETS", "ARIMA", "RandomForest", "XGBoost"])
     if model_name == "ETS":
         st.caption("ETS = univarié (chronique cible seule).")
@@ -44,12 +48,32 @@ with st.sidebar:
     distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
     K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
 
-# ── Chargement + sélection des points ───────────────────────────────────
-if uploaded_file is None:
+# ── Répartition des fichiers uploadés (Excel chronique + descriptif) ─────
+excel_file, descriptif_file = None, None
+for f in uploaded_files or []:
+    ext = f.name.rsplit('.', 1)[-1].lower()
+    if ext in ('xlsx', 'xls'):
+        excel_file = f
+    elif ext == 'txt':
+        descriptif_file = f
+
+if excel_file is None:
     st.info("Chargez un fichier Excel (3 points minimum) pour commencer.")
     st.stop()
 
-df_raw = load_excel(uploaded_file)  # mis en cache : plus de rechargement à chaque interaction
+df_raw = load_excel(excel_file)  # mis en cache : plus de rechargement à chaque interaction
+
+coords_dict = {}
+if descriptif_file is not None:
+    try:
+        coords_dict = load_descriptif(descriptif_file.getvalue())
+        st.sidebar.success(f"✓ Fichier descriptif chargé ({len(coords_dict)} points)")
+    except Exception as e:
+        st.sidebar.error(f"Impossible de lire le fichier descriptif : {e}")
+else:
+    st.sidebar.info(
+        "Pas de fichier descriptif fourni — la carte piézométrique sera indisponible."
+    )
 
 try:
     source_df, points, has_masse = core.parse_multi_piezo_excel(df_raw)
@@ -101,28 +125,4 @@ if ok and has_masse:
             f"✓ Même masse d'eau : {list(chronicles.values())[0]['masse_eau']}"
         )
 elif ok:
-    st.sidebar.warning("Masse d'eau non renseignée — à vérifier manuellement.")
-
-if not ok:
-    st.stop()
-
-# ── Onglets ──────────────────────────────────────────────────────────────
-tab_reseau_ui, tab_analyse_ui, tab_carte_ui, tab_twin_ui = st.tabs(
-    ["🌊 Réseau Piézo", "📊 Analyse", "🗺️ Carte piézométrique", "🌐 Digital Twin"]
-)
-
-with tab_reseau_ui:
-    tab_reseau.render(chronicles)
-
-with tab_analyse_ui:
-    freq = tab_analyse.render(
-        chronicles, selection, target_name, model_name,
-        future_years, validation_years, ci_pct, n_bootstraps
-    )
-
-with tab_carte_ui:
-    tab_carte.render(selection, chronicles)
-
-with tab_twin_ui:
-    tab_twin.render(chronicles, selection, target_name, freq, ok,
-                     Q, S, K, thickness, distance, Area)
+    st.sidebar.warning("Masse d'eau non renseignée — à vérifier
