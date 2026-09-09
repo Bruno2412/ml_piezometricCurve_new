@@ -13,19 +13,25 @@ import streamlit as st
 import piezo_core as core
 
 
-@st.cache_data(show_spinner="Lecture du fichier Excel ADES…")
-def load_excel(uploaded_file) -> pd.DataFrame:
-    """
-    Charge le fichier Excel des chroniques.
-    """
+@st.cache_data(show_spinner="Lecture du fichier Excel ...")
+def load_excel(uploaded_file) -> tuple[pd.DataFrame, str]:
+    #"""Charge le fichier Excel des chroniques et retourne le DataFrame ainsi que le nom du fichier."""
+    df = pd.read_excel(uploaded_file)
+    file_name = getattr(uploaded_file, "name", str(uploaded_file))
+    return df, file_name
 
-    return pd.read_excel(uploaded_file)
+# def load_excel(uploaded_file) -> pd.DataFrame:
+#     """
+#     Charge le fichier Excel des chroniques.
+#     """
+
+#     return pd.read_excel(uploaded_file)
 
 
-@st.cache_data(show_spinner="Lecture du fichier descriptif ADES…")
+@st.cache_data(show_spinner="Lecture du fichier descriptif...")
 def load_descriptif(file_bytes: bytes) -> dict:
     """
-    Parse le fichier descriptif ADES à partir de ses octets.
+    Parse le fichier descriptif à partir de ses octets.
 
     Le fichier est temporairement écrit sur disque car
     core.parse_descriptif() attend actuellement un chemin de fichier.
