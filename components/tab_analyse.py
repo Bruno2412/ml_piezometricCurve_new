@@ -36,7 +36,7 @@ def render(chronicles, selection, target_name, model_name,
     # --- 2. Détection de la fréquence ---
     try:
         freq = core.detect_frequency(target_df['date'])
-        st.write(f"✅ fréquence détectée : {freq}")
+        #st.write(f"✅ fréquence détectée : {freq}")
     except Exception as e:
         st.error(f"❌ Erreur dans detect_frequency() : {e}")
         st.exception(e)
