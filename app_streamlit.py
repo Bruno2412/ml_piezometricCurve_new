@@ -53,7 +53,7 @@ for f in uploaded_files or []:
 if excel_file is not None:
     # 1. Chargement du fichier Excel
     try:
-        df_raw = load_excel(excel_file)
+        df_raw, _file_name = load_excel(excel_file)
     except Exception as e:
         st.error(f"Erreur lors de la lecture du fichier Excel : {e}")
         st.stop()
@@ -136,11 +136,34 @@ if excel_file is not None:
                 with tab1:
                     tab_reseau.render(chronicles)
                 with tab2:
-                    tab_analyse.render(chronicles, target_name, model_name, future_years, validation_years, ci_pct, n_bootstraps)
+                    freq = tab_analyse.render(
+                        chronicles=chronicles,
+                        selection=selection,
+                        target_name=target_name,
+                        model_name=model_name,
+                        future_years=future_years,
+                        validation_years=validation_years,
+                        ci_pct=ci_pct,
+                        n_bootstraps=n_bootstraps,
+                    )
                 with tab3:
-                    tab_carte.render(chronicles, coords_dict)
+                    tab_carte.render(
+                        selection=selection,
+                        chronicles=chronicles,
+                        coords_dict=coords_dict,
+                    )
                 with tab4:
-                    tab_twin.render(chronicles, target_name, thickness, Q, S, Area, distance, K)
+                    tab_twin.render(
+                        chronicles=chronicles,
+                        selection=selection,
+                        target_name=target_name,
+                        freq=freq,
+                        ok=ok,
+                        Q=Q, S=S, K=K,
+                        thickness=thickness,
+                        distance=distance,
+                        Area=Area,
+                    )
 
 else:
     st.info("👋 Bienvenue. Veuillez charger un fichier Excel ADES dans le menu latéral pour démarrer l'analyse.")
