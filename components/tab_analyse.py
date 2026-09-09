@@ -8,6 +8,9 @@ import streamlit as st
 
 import piezo_core as core
 
+@st.cache_data(show_spinner="Calcul de la validation en cours…")
+def cached_fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, n_bootstraps):
+    return core.fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, n_bootstraps=n_bootstraps)
 
 def render(chronicles, selection, target_name, model_name,
            future_years, validation_years, ci_pct, n_bootstraps):
