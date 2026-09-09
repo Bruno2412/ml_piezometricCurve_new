@@ -62,15 +62,14 @@ for f in uploaded_files or []:
 if chroniques_file is not None or excel_file is not None:
     # 1. Chargement des chroniques : export ADES brut en priorité,
     #    sinon Excel déjà préparé (compatibilité ascendante)
+    uploaded_chroniques = (
+        chroniques_file
+        if chroniques_file is not None
+        else excel_file
+    )
+    
     try:
-        uploaded_chroniques = (
-            chroniques_file
-            if chroniques_file is not None
-            else excel_file
-        )
-    
         df_raw, _file_name = load_chroniques_auto(uploaded_chroniques)
-    
     except Exception as e:
         st.error(f"Erreur lors de la lecture des chroniques : {e}")
         st.stop()
