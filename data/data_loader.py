@@ -26,6 +26,42 @@ def _parse_from_bytes(file_bytes: bytes, parse_fn):
     finally:
         os.remove(tmp_path)
 
+@st.cache_data(show_spinner="Lecture des chroniques...")
+def load_chroniques_auto(uploaded_file) -> tuple[pd.DataFrame, str]:
+    """
+    Charge automatiquement une chronique ADES en TXT
+    ou un fichier Excel de chroniques préparé.
+
+    Retourne toujours :
+        df, file_name
+    """
+
+    if uploaded_file is None:
+        raise ValueError("Aucun fichier de chroniques fourni.")
+
+    file_name = getattr(uploaded_file, "name", str(uploaded_file))
+    extension = os.path.splitext(file_name)[1].lower()
+
+    if extension == ".txt":
+
+        df = _parse_from_bytes(
+            uploaded_file.getvalue(),
+            core.parse_chroniques_raw
+        )
+
+    elif extension in (".xlsx", ".xls"):
+
+        df = pd.read_excel(uploaded_file)
+
+    else:
+
+        raise ValueError(
+            f"Format non supporté : {extension}. "
+            "Formats acceptés : .txt, .xlsx, .xls"
+        )
+
+    return df, file_name
+
 
 @st.cache_data(show_spinner="Lecture du fichier Excel ...")
 def load_excel(uploaded_file) -> tuple[pd.DataFrame, str]:
