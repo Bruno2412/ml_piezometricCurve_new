@@ -68,7 +68,7 @@ def load_chroniques_auto(uploaded_file):
     ]
     for col in cols_numeriques:
         if col in df.columns:
-            if df[col].dtype == "object":
+            if df[col].dtype in ("object", "str"):
                 # Remplacement explicite des virgules par des points
                 df[col] = df[col].astype(str).str.replace(",", ".")
             df[col] = pd.to_numeric(df[col], errors="coerce")
