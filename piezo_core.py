@@ -409,7 +409,7 @@ class ARIMAModel:
             raise RuntimeError("ARIMA : impossible d'ajuster le modèle.")
         self.res_ = best_res
         return self
-
+    
     def predict(self, steps, future_dates=None):
         exog_fut = None
         if self.aux_cols_:
@@ -419,8 +419,20 @@ class ARIMAModel:
             ])
         fc = self.res_.get_forecast(steps=steps, exog=exog_fut)
         pred = fc.predicted_mean
-        ci = fc.conf_int(alpha=self.ci_level)
-        return pred, ci.iloc[:, 0].values, ci.iloc[:, 1].values
+        ci = np.asarray(fc.conf_int(alpha=self.ci_level))
+        return np.asarray(pred), ci[:, 0], ci[:, 1]
+    
+    # def predict(self, steps, future_dates=None):
+    #     exog_fut = None
+    #     if self.aux_cols_:
+    #         t_fut = (pd.to_datetime(pd.Series(future_dates)) - self.origin_).dt.days.values
+    #         exog_fut = np.column_stack([
+    #             self.exog_trend_[c][0] * t_fut + self.exog_trend_[c][1] for c in self.aux_cols_
+    #         ])
+    #     fc = self.res_.get_forecast(steps=steps, exog=exog_fut)
+    #     pred = fc.predicted_mean
+    #     ci = fc.conf_int(alpha=self.ci_level)
+    #     return pred, ci.iloc[:, 0].values, ci.iloc[:, 1].values
 
 
 class SklearnModel:
