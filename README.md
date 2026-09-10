@@ -4,7 +4,7 @@ Application Streamlit dédiée à l'analyse, la modélisation et la visualisatio
 
 L'application permet d'explorer des données piézométriques, d'analyser les relations entre plusieurs points de mesure, de produire des cartes piézométriques et de réaliser des prévisions à l'aide de plusieurs modèles statistiques et de machine learning.
 
-Ajout d'une authentification par user et par entreprise'
+Ajout d'une authentification par user et par entreprise
 
 ## Fonctionnalités
 
@@ -82,6 +82,16 @@ ml_piezometricCurve_new/
 │   ├── chronology_service.py
 │   └── analysis_service.py
 │
+├── tests/                        
+│   ├── __init__.py
+│   ├── test_data_loader.py
+│   ├── test_parsing.py
+│   ├── test_chronology.py
+│   ├── test_analysis.py
+│   ├── test_models.py
+│   ├── test_validators.py
+│   └── test_authentication.py
+│
 ├── piezo_core.py
 │
 ├── tests/
@@ -95,3 +105,4 @@ ml_piezometricCurve_new/
 ├── README.md
 ├── pyproject.toml
 └── requirements.txt'
+└── .gitignore
