@@ -2,17 +2,19 @@
 """
 Tests unitaires pour les fonctions de parsing de piezo_core.py.
 
-Portée : uniquement la logique pure de parsing (pas de Streamlit, pas de
-data_loader.py — ce dernier n'étant qu'un wrapper de cache autour de
-piezo_core, il n'a pas de logique propre à tester ici).
+Portée : uniquement la logique pure de parsing (lecture et structuration
+des fichiers ADES/Excel). Pas de Streamlit, pas de data_loader.py — ce
+dernier n'étant qu'un wrapper de cache autour de piezo_core, il n'a pas
+de logique propre à tester ici. L'alignement temporel et les fréquences
+(align_chronicle, detect_frequency, value_at_date, ...) sont testés dans
+test_chronology.py, pas ici.
 
 Lancer avec :
-    pytest test_parsing.py -v
+    pytest tests/test_parsing.py -v
 """
 
 import textwrap
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -160,84 +162,9 @@ class TestParseMultiPiezoExcel:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# align_chronicle
-# ─────────────────────────────────────────────────────────────────────────
-
-class TestAlignChronicle:
-    def test_returns_exact_values_at_known_dates(self):
-        df = pd.DataFrame({
-            'date': pd.date_range('2024-01-01', periods=5, freq='D'),
-            'level': [1.0, 2.0, 3.0, 4.0, 5.0],
-        })
-        target_dates = df['date']
-        result = core.align_chronicle(df, target_dates)
-        np.testing.assert_allclose(result, [1.0, 2.0, 3.0, 4.0, 5.0])
-
-    def test_interpolates_between_known_points(self):
-        df = pd.DataFrame({
-            'date': [pd.Timestamp('2024-01-01'), pd.Timestamp('2024-01-03')],
-            'level': [10.0, 20.0],
-        })
-        target_dates = [pd.Timestamp('2024-01-02')]
-        result = core.align_chronicle(df, target_dates)
-        assert result[0] == pytest.approx(15.0)
-
-    def test_handles_duplicate_dates_by_averaging(self):
-        df = pd.DataFrame({
-            'date': [pd.Timestamp('2024-01-01'), pd.Timestamp('2024-01-01')],
-            'level': [10.0, 20.0],
-        })
-        result = core.align_chronicle(df, [pd.Timestamp('2024-01-01')])
-        assert result[0] == pytest.approx(15.0)
-
-    def test_output_length_matches_target_dates(self):
-        df = pd.DataFrame({
-            'date': pd.date_range('2024-01-01', periods=3, freq='D'),
-            'level': [1.0, 2.0, 3.0],
-        })
-        target_dates = pd.date_range('2024-01-01', periods=6, freq='D')
-        result = core.align_chronicle(df, target_dates)
-        assert len(result) == 6
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# detect_frequency / freq_to_seasonal_periods / future_steps
-# ─────────────────────────────────────────────────────────────────────────
-
-class TestDetectFrequency:
-    @pytest.mark.parametrize('freq_str, expected', [
-        ('D', 'D'),
-        ('7D', 'W'),
-        ('30D', 'MS'),
-        ('90D', 'QS'),
-        ('365D', 'YS'),
-    ])
-    def test_detects_expected_frequency(self, freq_str, expected):
-        dates = pd.Series(pd.date_range('2024-01-01', periods=6, freq=freq_str))
-        assert core.detect_frequency(dates) == expected
-
-
-class TestFreqToSeasonalPeriods:
-    @pytest.mark.parametrize('freq, expected', [
-        ('D', 365), ('W', 52), ('MS', 12), ('QS', 4), ('YS', 1),
-    ])
-    def test_known_frequencies(self, freq, expected):
-        assert core.freq_to_seasonal_periods(freq) == expected
-
-    def test_unknown_frequency_defaults_to_monthly(self):
-        assert core.freq_to_seasonal_periods('XYZ') == 12
-
-
-class TestFutureSteps:
-    def test_monthly_steps_over_two_years(self):
-        assert core.future_steps('MS', years=2) == 24
-
-    def test_daily_steps_over_one_year(self):
-        assert core.future_steps('D', years=1) == 365
-
-
-# ─────────────────────────────────────────────────────────────────────────
 # Parsing des fichiers ADES pipe-séparés : descriptif / chroniques / masses eau
+# (align_chronicle, detect_frequency, freq_to_seasonal_periods, future_steps
+#  et value_at_date sont testés dans test_chronology.py)
 # ─────────────────────────────────────────────────────────────────────────
 
 DESCRIPTIF_CONTENT = textwrap.dedent("""\
@@ -331,22 +258,3 @@ class TestParseMassesEau:
         with pytest.raises(ValueError, match='Colonnes attendues introuvables'):
             core.parse_masses_eau(str(p))
 
-
-# ─────────────────────────────────────────────────────────────────────────
-# value_at_date
-# ─────────────────────────────────────────────────────────────────────────
-
-class TestValueAtDate:
-    def test_exact_match_returns_known_value(self):
-        df = pd.DataFrame({
-            'date': pd.date_range('2024-01-01', periods=3, freq='D'),
-            'level': [1.0, 2.0, 3.0],
-        })
-        assert core.value_at_date(df, '2024-01-02') == pytest.approx(2.0)
-
-    def test_interpolates_between_known_values(self):
-        df = pd.DataFrame({
-            'date': [pd.Timestamp('2024-01-01'), pd.Timestamp('2024-01-03')],
-            'level': [10.0, 30.0],
-        })
-        assert core.value_at_date(df, '2024-01-02') == pytest.approx(20.0)
