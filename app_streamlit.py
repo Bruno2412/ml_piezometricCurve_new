@@ -7,7 +7,11 @@ import os
 import streamlit as st
 
 import piezo_core as core
-from data.data_loader import load_excel, load_chroniques, load_descriptif, load_masses_eau
+from data.data_loader import (
+    load_chroniques_auto,
+    load_descriptif,
+    load_masses_eau
+)
 from components import tab_reseau, tab_analyse, tab_carte, tab_twin
 
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
@@ -58,11 +62,22 @@ for f in uploaded_files or []:
 if chroniques_file is not None or excel_file is not None:
     # 1. Chargement des chroniques : export ADES brut en priorité,
     #    sinon Excel déjà préparé (compatibilité ascendante)
+    uploaded_chroniques = (
+        chroniques_file
+        if chroniques_file is not None
+        else excel_file
+    )
+    
     try:
-        if chroniques_file is not None:
-            df_raw, _file_name = load_chroniques(chroniques_file)
-        else:
-            df_raw, _file_name = load_excel(excel_file)
+        df_raw, _file_name = load_chroniques_auto(uploaded_chroniques)
+    except Exception as e:
+        st.error(f"Erreur lors de la lecture des chroniques : {e}")
+        st.stop()
+        
+        # if chroniques_file is not None:
+        #     df_raw, _file_name = load_chroniques(chroniques_file)
+        # else:
+        #     df_raw, _file_name = load_excel(excel_file)
     except Exception as e:
         st.error(f"Erreur lors de la lecture des chroniques : {e}")
         st.stop()
