@@ -20,9 +20,13 @@ from components import login, tab_reseau, tab_analyse, tab_carte, tab_twin
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
 st.title("Expert Piézométrie Pro — Digital Twin")
 
+st.set_page_config(
+    page_title="Expert Piézométrie Pro",
+    layout="wide"
+)
+
 login.require_login()
 login.render_user_badge()
-
 
 st.title("Expert Piézométrie Pro - Digital Twin")
 
