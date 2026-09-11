@@ -3,8 +3,11 @@
 Expert Piézométrie Pro — Digital Twin
 """
 
+
 import os
+
 import streamlit as st
+
 
 import piezo_core as core
 from data.data_loader import (
@@ -12,10 +15,15 @@ from data.data_loader import (
     load_descriptif,
     load_masses_eau
 )
-from components import tab_reseau, tab_analyse, tab_carte, tab_twin
+
+from components import login, tab_reseau, tab_analyse, tab_carte, tab_twin
 
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
 st.title("Expert Piézométrie Pro — Digital Twin")
+
+login.require_login()
+login.render_user_badge()
+
 
 # ── Barre latérale (Paramètres) ──────────────────────────────────────────
 with st.sidebar:
