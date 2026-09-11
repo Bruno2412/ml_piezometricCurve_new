@@ -43,12 +43,12 @@ def main():
 
     init_firebase(sys.argv[1])
 
-    print("\n── Création des 2 comptes global_master ──")
-    for i in (1, 2):
-        print(f"\nGlobal master n°{i} :")
-        email = input("  Email : ").strip()
-        password = getpass.getpass("  Mot de passe (8 caractères min.) : ")
-        create_user(email, password, role="global_master")
+    if input("\nCréer les 2 comptes global_master ? (o/n) : ").strip().lower() == "o":
+        for i in (1, 2):
+            print(f"\nGlobal master n°{i} :")
+            email = input("  Email : ").strip()
+            password = getpass.getpass("  Mot de passe (8 caractères min.) : ")
+            create_user(email, password, role="global_master")
 
     if input("\nCréer une première société maintenant ? (o/n) : ").strip().lower() == "o":
         company_id = input("  Identifiant de société (court, ex: 'edf', 'brgm') : ").strip()
