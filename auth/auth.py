@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-auth/authentication.py — Connexion à Firebase Authentication et gestion
-des comptes. Aucune interface ici : uniquement de la logique, appelée
-par components/login.py.
-
-Rôles gérés (stockés en "custom claims" Firebase, pas de base à part) :
+Authentification multi-sociétés via Firebase Authentication, avec rôles
+stockés en "custom claims" (pas besoin de base de données séparée) :
   - 'global_master'   : voit toutes les sociétés (2 comptes prévus)
   - 'company_master'  : administre une seule société (1 par société)
   - 'user'            : utilisateur standard, rattaché à une société
+
+Deux briques Firebase utilisées :
+  - Identity Toolkit REST API (clé API Web, non secrète) pour vérifier
+    email + mot de passe au moment du login.
+  - Firebase Admin SDK (clé de compte de service, secrète) pour créer
+    des comptes et poser les rôles (custom claims) côté serveur.
 """
 
 import firebase_admin
@@ -118,3 +121,42 @@ def list_users(current_user: dict):
 
 def set_user_active(uid: str, is_active: bool):
     fb_auth.update_user(uid, disabled=not is_active)
+
+
+def require_login():
+    """Bloque l'accès au reste de l'app tant que l'utilisateur n'est pas
+    authentifié. À appeler tout en haut de app_streamlit.py."""
+    if "user" not in st.session_state:
+        st.session_state.user = None
+
+    if st.session_state.user is not None:
+        return
+
+    st.title("Connexion — Expert Piézométrie Pro")
+    with st.form("login_form"):
+        email = st.text_input("Email")
+        password = st.text_input("Mot de passe", type="password")
+        submitted = st.form_submit_button("Se connecter")
+
+    if submitted:
+        user = authenticate(email, password)
+        if user is None:
+            st.error("Email ou mot de passe incorrect, ou compte non configuré.")
+        else:
+            st.session_state.user = user
+            st.rerun()
+
+    st.stop()
+
+
+def render_user_badge():
+    """Affiche l'utilisateur connecté + bouton de déconnexion dans la
+    sidebar. À appeler juste après require_login()."""
+    user = st.session_state.user
+    label = f"{user['email']} ({user['role']})"
+    if user.get("company_name"):
+        label += f" — {user['company_name']}"
+    st.sidebar.caption(f"Connecté : {label}")
+    if st.sidebar.button("Se déconnecter"):
+        st.session_state.user = None
+        st.rerun()
