@@ -4,7 +4,7 @@ Application Streamlit dédiée à l'analyse, la modélisation et la visualisatio
 
 L'application permet d'explorer des données piézométriques, d'analyser les relations entre plusieurs points de mesure, de produire des cartes piézométriques et de réaliser des prévisions à l'aide de plusieurs modèles statistiques et de machine learning.
 
-Ajout d'une authentification par user et par entreprise
+Ajout d'une authentification par user et par entreprise -- intégration de firebase
 
 ## Fonctionnalités
 
@@ -28,28 +28,6 @@ Ajout d'une authentification par user et par entreprise
 ## Architecture
 
 ```text
-ml_piezometricCurve_new/
-│
-├── .streamlit/
-│   └── config.toml
-│
-├── components/
-│   ├── tab_reseau.py
-│   ├── tab_analyse.py
-│   ├── tab_carte.py
-│   └── tab_twin.py
-│
-├── data/
-│   └── data_loader.py
-│
-├── app_streamlit.py
-├── piezo_core.py
-├── requirements.txt
-├── README.md
-└── .gitignore
-
-J'aimerais aller vers cette architecture
-
 ml_piezometricCurve_new/
 │
 ├── app_streamlit.py              ← point d'entrée

@@ -4,18 +4,31 @@ Expert Piézométrie Pro — Digital Twin
 """
 
 import os
+
 import streamlit as st
 
 import piezo_core as core
+
 from data.data_loader import (
     load_chroniques_auto,
     load_descriptif,
     load_masses_eau
 )
-from components import tab_reseau, tab_analyse, tab_carte, tab_twin
+
+from components import login, tab_reseau, tab_analyse, tab_carte, tab_twin
 
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
 st.title("Expert Piézométrie Pro — Digital Twin")
+
+st.set_page_config(
+    page_title="Expert Piézométrie Pro",
+    layout="wide"
+)
+
+login.require_login()
+login.render_user_badge()
+
+st.title("Expert Piézométrie Pro - Digital Twin")
 
 # ── Barre latérale (Paramètres) ──────────────────────────────────────────
 with st.sidebar:
@@ -73,18 +86,7 @@ if chroniques_file is not None or excel_file is not None:
     except Exception as e:
         st.error(f"Erreur lors de la lecture des chroniques : {e}")
         st.stop()
-        
-        # if chroniques_file is not None:
-        #     df_raw, _file_name = load_chroniques(chroniques_file)
-        # else:
-        #     df_raw, _file_name = load_excel(excel_file)
-    except Exception as e:
-        st.error(f"Erreur lors de la lecture des chroniques : {e}")
-        st.stop()
 
-    # 2. Chargement du descriptif (coordonnées + nom) et de MassesEau.txt
-    #    (libellé fiable de la masse d'eau, plus complet que le code brut
-    #    présent dans descriptif.txt)
     coords_dict = {}
     if descriptif_file is not None:
         try:
