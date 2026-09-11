@@ -30,28 +30,6 @@ Ajout d'une authentification par user et par entreprise
 ```text
 ml_piezometricCurve_new/
 │
-├── .streamlit/
-│   └── config.toml
-│
-├── components/
-│   ├── tab_reseau.py
-│   ├── tab_analyse.py
-│   ├── tab_carte.py
-│   └── tab_twin.py
-│
-├── data/
-│   └── data_loader.py
-│
-├── app_streamlit.py
-├── piezo_core.py
-├── requirements.txt
-├── README.md
-└── .gitignore
-
-J'aimerais aller vers cette architecture
-
-ml_piezometricCurve_new/
-│
 ├── app_streamlit.py              ← point d'entrée
 │
 ├── auth/
