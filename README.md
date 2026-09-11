@@ -94,11 +94,6 @@ ml_piezometricCurve_new/
 │
 ├── piezo_core.py
 │
-├── tests/
-│   ├── test_parser.py
-│   ├── test_chroniques.py
-│   └── test_models.py
-│
 ├── .streamlit/
 │   └── config.toml
 │
