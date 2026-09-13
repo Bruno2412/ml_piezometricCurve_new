@@ -28,13 +28,9 @@ login.render_user_badge()
 
 # ── Barre latérale (Paramètres) ──────────────────────────────────────────
 with st.sidebar:
-    
+
     project_selector.render()
-    
-    if permissions.can_administer_users(st.session_state.user):
-        with st.expander("🔧 Administration des comptes"):
-            tab_admin.render()
-    
+
     st.header("Chroniques (3 points — même masse d'eau)")
     uploaded_files = st.file_uploader(
         "Charger l'export ADES : chroniques.txt, descriptif.txt, "
@@ -60,6 +56,11 @@ with st.sidebar:
     Area = st.number_input("Surface de l'ouvrage (m²)", value=100.0)
     distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
     K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
+
+# ── Administration des comptes (zone principale, pleine largeur) ─────────
+if permissions.can_administer_users(st.session_state.user):
+    with st.expander("🔧 Administration des comptes"):
+        tab_admin.render()
 
 # ── Extraction des fichiers uploadés (routage par nom, convention ADES) ──
 excel_file, chroniques_file, descriptif_file, masses_eau_file = None, None, None, None
