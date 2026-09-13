@@ -85,25 +85,6 @@ def load_chroniques_auto(uploaded_file):
 
     return df, file_name
 
-# @st.cache_data(show_spinner="Lecture des chroniques...")
-# def load_chroniques_auto(uploaded_file):
-#     file_name = getattr(uploaded_file, "name", str(uploaded_file))
-#     extension = os.path.splitext(file_name)[1].lower()
-
-#     if extension == ".txt":
-#         df = _parse_from_bytes(
-#             uploaded_file.getvalue(),
-#             core.parse_chroniques_raw
-#         )
-
-#     elif extension in (".xlsx", ".xls"):
-#         df = pd.read_excel(uploaded_file)
-
-#     else:
-#         raise ValueError(f"Format non supporté : {extension}")
-
-#     return df, file_name
-
 
 @st.cache_data(show_spinner="Lecture du fichier Excel ...")
 def load_excel(uploaded_file) -> tuple[pd.DataFrame, str]:
