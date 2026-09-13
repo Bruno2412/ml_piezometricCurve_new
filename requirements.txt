@@ -1,3 +1,8 @@
+# Fichier généré automatiquement — NE PAS ÉDITER À LA MAIN.
+# Source de vérité : pyproject.toml.
+# Pour mettre à jour : modifier pyproject.toml, puis relancer
+# scripts/generate_requirements.py
+
 streamlit==1.63.0
 pandas==3.0.2
 numpy==2.4.4
