@@ -15,7 +15,9 @@ from data.data_loader import (
     load_masses_eau
 )
 
-from components import login, tab_reseau, tab_analyse, tab_carte, tab_twin
+from auth import permissions
+
+from components import login, project_selector, tab_admin, tab_reseau, tab_analyse, tab_carte, tab_twin
 
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
 st.title("Piézométrie - Digital Twin - ...")
@@ -26,6 +28,13 @@ login.render_user_badge()
 
 # ── Barre latérale (Paramètres) ──────────────────────────────────────────
 with st.sidebar:
+    
+    project_selector.render()
+    
+    if permissions.can_administer_users(st.session_state.user):
+        with st.expander("🔧 Administration des comptes"):
+            tab_admin.render()
+    
     st.header("Chroniques (3 points — même masse d'eau)")
     uploaded_files = st.file_uploader(
         "Charger l'export ADES : chroniques.txt, descriptif.txt, "
