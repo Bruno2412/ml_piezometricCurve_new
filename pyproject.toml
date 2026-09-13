@@ -2,7 +2,7 @@
 name = "expert-piezometrie-pro"
 version = "0.1.0"
 description = "Expert Piézométrie Pro — Digital Twin (analyse et prévision piézométrique)"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "streamlit==1.63.0",
     "pandas==3.0.2",
