@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from piezo_app import piezo_core as core
+from piezo_app.components.mpl_theme import theme_colors
 
 
 def render(chronicles):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20, 6.5))
-    cmap = plt.get_cmap("tab10")
-    colors = {i: cmap((i - 1) % 10) for i in chronicles.keys()}
+    palette = theme_colors()
+    colors = {i: palette[(i - 1) % len(palette)] for i in chronicles.keys()}
     for i, c in chronicles.items():
         ax1.plot(c["df"]["date"], c["df"]["level"], color=colors[i], label=c["name"])
         z = (c["df"]["level"] - c["df"]["level"].mean()) / (c["df"]["level"].std() or 1)

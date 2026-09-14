@@ -3,7 +3,24 @@ primaryColor = "#0d6efd"
 backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f0f4f8"
 textColor = "#1c2733"
-font = "sans serif"
+
+# Police custom via Google Fonts (pas de fichier .ttf à héberger dans le repo).
+font = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@600;700&display=swap"
+
+# Palette catégorielle cohérente, déclinée du bleu primaire (#0d6efd) :
+# lue par src/piezo_app/components/mpl_theme.py pour que les graphiques
+# matplotlib suivent la même palette que les widgets natifs Streamlit
+# (metrics, dataframes, etc.), au lieu du cycle de couleurs par défaut
+# de matplotlib.
+chartCategoricalColors = [
+    "#0d6efd",  # bleu primaire (piézomètre principal / série cible)
+    "#fd7e14",  # orange (série de comparaison / injection)
+    "#20c997",  # vert (validation / prévision)
+    "#6f42c1",  # violet (série auxiliaire)
+    "#dc3545",  # rouge (alerte / seuil)
+    "#adb5bd",  # gris (référence / historique)
+]
 
 [server]
 maxUploadSize = 50

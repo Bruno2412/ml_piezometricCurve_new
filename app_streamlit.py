@@ -25,8 +25,12 @@ import streamlit as st
 
 from piezo_app.auth import permissions
 from piezo_app.components import login
+from piezo_app.components.mpl_theme import apply_mpl_theme
 
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
+
+# Une seule fois, avant toute figure matplotlib créée par les pages/composants.
+apply_mpl_theme()
 
 login.require_login()
 login.render_user_badge()
