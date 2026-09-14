@@ -23,7 +23,7 @@ import os
 import pandas as pd
 import pytest
 
-from data import data_loader as dl
+from piezo_app.data import data_loader as dl
 
 # ─────────────────────────────────────────────────────────────────────────
 # Fixtures / helpers

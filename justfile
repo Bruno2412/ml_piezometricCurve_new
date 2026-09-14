@@ -46,6 +46,6 @@ check: format lint test
 requirements:
     python scripts/generate_requirements.py
 
-# Crée le premier compte admin Firebase (voir auth/create_first_users.py).
+# Crée le premier compte admin Firebase (voir src/piezo_app/auth/create_first_users.py).
 create-first-user:
-    python auth/create_first_users.py
+    python src/piezo_app/auth/create_first_users.py

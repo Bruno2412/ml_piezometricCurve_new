@@ -13,7 +13,7 @@ Lancer depuis la racine du repo :
 
 import pytest
 
-from auth import permissions
+from piezo_app.auth import permissions
 
 
 def _user(role, company_id=None):

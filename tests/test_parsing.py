@@ -18,7 +18,7 @@ import textwrap
 import pandas as pd
 import pytest
 
-import piezo_core as core
+from piezo_app import piezo_core as core
 
 # ─────────────────────────────────────────────────────────────────────────
 # Helpers internes : _clean_str / _strip_accents

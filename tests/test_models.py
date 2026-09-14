@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import piezo_core as core
+from piezo_app import piezo_core as core
 
 # ─────────────────────────────────────────────────────────────────────────
 # Fixtures : séries synthétiques

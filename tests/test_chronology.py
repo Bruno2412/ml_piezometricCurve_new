@@ -11,7 +11,7 @@ Lancer avec :
 import pandas as pd
 import pytest
 
-import piezo_core as core
+from piezo_app import piezo_core as core
 
 # ─────────────────────────────────────────────────────────────────────────
 # align_chronicle

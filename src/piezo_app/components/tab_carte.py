@@ -7,7 +7,7 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 
-import piezo_core as core
+from piezo_app import piezo_core as core
 
 
 def render(selection, chronicles, coords_dict):

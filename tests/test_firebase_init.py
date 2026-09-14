@@ -17,7 +17,7 @@ Lancer avec :
 
 from unittest import mock
 
-from auth import authentication
+from piezo_app.auth import authentication
 
 
 class TestInitFirebase:

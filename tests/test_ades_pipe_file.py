@@ -15,7 +15,7 @@ Lancer avec :
 
 import pytest
 
-import piezo_core as core
+from piezo_app import piezo_core as core
 
 CONTENT_ASCII = "Identifiant national BSS|Côte NGF\nBSS001|100,5\n"
 

@@ -11,8 +11,8 @@ la page directement.
 
 import streamlit as st
 
-from auth import permissions
-from components import project_selector, tab_admin
+from piezo_app.auth import permissions
+from piezo_app.components import project_selector, tab_admin
 
 st.title("🔧 Administration des comptes")
 

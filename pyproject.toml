@@ -25,6 +25,9 @@ dependencies = [
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [dependency-groups]
 dev = [
     "ruff>=0.6.0",
@@ -51,10 +54,11 @@ ignore = [
 # tab_admin.py importe streamlit/auth après son docstring de module,
 # volontairement ordonné ainsi pour la lisibilité : pas une priorité
 # à corriger sur un repo existant.
-"components/tab_admin.py" = ["E402"]
+"src/piezo_app/components/tab_admin.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

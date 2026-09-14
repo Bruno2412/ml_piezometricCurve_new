@@ -8,7 +8,7 @@ Le module ne contient aucune logique métier.
 
 import streamlit as st
 
-from auth import authentication
+from piezo_app.auth import authentication
 
 
 def require_login():

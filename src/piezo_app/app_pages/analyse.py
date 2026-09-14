@@ -8,9 +8,9 @@ app_streamlit.py, avant l'introduction de la navigation multi-pages.
 
 import streamlit as st
 
-import piezo_core as core
-from components import tab_analyse, tab_carte, tab_reseau, tab_twin
-from data.data_loader import load_chroniques_auto, load_descriptif, load_masses_eau
+from piezo_app import piezo_core as core
+from piezo_app.components import tab_analyse, tab_carte, tab_reseau, tab_twin
+from piezo_app.data.data_loader import load_chroniques_auto, load_descriptif, load_masses_eau
 
 st.title("Piézométrie - Digital Twin - ...")
 

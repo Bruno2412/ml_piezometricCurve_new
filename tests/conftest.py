@@ -2,13 +2,13 @@
 """
 Configuration pytest partagée par toute la suite de tests.
 
-`auth/__init__.py` importe `auth.authentication`, qui s'initialise
-elle-même (lecture de `st.secrets` + connexion Firebase Admin) au
-moment de l'import du module — avant même qu'un test ne s'exécute.
-On mocke donc Streamlit et Firebase Admin ici, avant que quoi que ce
-soit n'importe `auth`, pour pouvoir tester authentication.py et
-permissions.py sans vrais identifiants Firebase ni fichier
-.streamlit/secrets.toml.
+`piezo_app/auth/__init__.py` importe `piezo_app.auth.authentication`,
+qui s'initialise elle-même (lecture de `st.secrets` + connexion
+Firebase Admin) au moment de l'import du module — avant même qu'un
+test ne s'exécute. On mocke donc Streamlit et Firebase Admin ici,
+avant que quoi que ce soit n'importe `piezo_app.auth`, pour pouvoir
+tester authentication.py et permissions.py sans vrais identifiants
+Firebase ni fichier .streamlit/secrets.toml.
 
 Ce fichier n'a rien à exporter : son seul rôle est cet effet de bord
 au moment de la collecte des tests (conftest.py est toujours importé
@@ -32,4 +32,4 @@ with (
     mock.patch("firebase_admin.initialize_app"),
     mock.patch("firebase_admin._apps", {}),
 ):
-    import auth  # noqa: F401  (déclenche l'import unique de auth.authentication)
+    import piezo_app.auth  # noqa: F401  (déclenche l'import unique de auth.authentication)

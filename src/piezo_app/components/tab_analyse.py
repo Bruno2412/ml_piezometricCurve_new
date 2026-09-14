@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
-import piezo_core as core
+from piezo_app import piezo_core as core
 
 
 @st.cache_data(show_spinner="Calcul de la validation en cours…")

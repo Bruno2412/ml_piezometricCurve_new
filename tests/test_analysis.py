@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from components import tab_analyse
+from piezo_app.components import tab_analyse
 
 
 class StopRenderException(BaseException):

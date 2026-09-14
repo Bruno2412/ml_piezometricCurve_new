@@ -14,7 +14,7 @@ pour le reste du script (voir auth.permissions.effective_company_id).
 
 import streamlit as st
 
-from auth import authentication, permissions
+from piezo_app.auth import authentication, permissions
 
 
 def render():

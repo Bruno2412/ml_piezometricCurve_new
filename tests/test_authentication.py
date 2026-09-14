@@ -20,7 +20,7 @@ from unittest import mock
 import pytest
 import requests
 
-from auth import authentication
+from piezo_app.auth import authentication
 
 # ─────────────────────────────────────────────────────────────────────────
 # Helpers

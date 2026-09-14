@@ -33,7 +33,7 @@ auth.permissions.can_administer_users) :
 
 import streamlit as st
 
-from auth import authentication, permissions
+from piezo_app.auth import authentication, permissions
 
 
 def render():

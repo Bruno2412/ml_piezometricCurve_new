@@ -4,7 +4,7 @@
 import matplotlib.pyplot as plt
 import streamlit as st
 
-import piezo_core as core
+from piezo_app import piezo_core as core
 
 
 def render(chronicles):

@@ -3,18 +3,18 @@
 Package auth — authentification Firebase + gestion des rôles.
 
 Ce fichier réexpose les fonctions les plus utilisées pour que le reste
-de l'app puisse écrire `import auth` puis `auth.authenticate(...)`,
-`auth.require_role(...)`, etc., sans se soucier de savoir dans quel
-sous-module elles vivent réellement.
+de l'app puisse écrire `from piezo_app import auth` puis
+`auth.authenticate(...)`, `auth.require_role(...)`, etc., sans se
+soucier de savoir dans quel sous-module elles vivent réellement.
 """
 
-from auth.authentication import (
+from piezo_app.auth.authentication import (
     authenticate,
     create_user,
     list_users,
     set_user_active,
 )
-from auth.permissions import (
+from piezo_app.auth.permissions import (
     ADMIN_ROLES,
     COMPANY_MASTER,
     GLOBAL_MASTER,
