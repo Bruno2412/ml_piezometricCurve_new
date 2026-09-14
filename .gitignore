@@ -32,3 +32,5 @@ dist/
 *.xlsx
 *.xls
 *.txt
+
+*.patch
