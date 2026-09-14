@@ -7,8 +7,7 @@ import streamlit as st
 import piezo_core as core
 
 
-def render(chronicles, selection, target_name, freq, ok,
-           Q, S, K, thickness, distance, Area):
+def render(chronicles, selection, target_name, freq, ok, Q, S, K, thickness, distance, Area):
     st.subheader("Jumeau numérique aquifère")
 
     if not ok:
@@ -16,8 +15,8 @@ def render(chronicles, selection, target_name, freq, ok,
         return
 
     target_idx_dt = selection.index(target_name) + 1
-    df_dt = chronicles[target_idx_dt]['df']
-    niveau_base = df_dt['level'].iloc[-1]
+    df_dt = chronicles[target_idx_dt]["df"]
+    niveau_base = df_dt["level"].iloc[-1]
 
     col_sliders, col_plot = st.columns([1, 2])
 
@@ -25,22 +24,12 @@ def render(chronicles, selection, target_name, freq, ok,
         st.markdown("**Paramètres de simulation**")
         Q_dt = st.slider("Q — Débit injecté (m³/j)", 0.0, 500.0, float(Q), step=1.0)
         S_dt = st.slider(
-            "S — Coeff. emmagasinement", 0.0001, 0.3, float(S),
-            step=0.0001, format="%.4f"
+            "S — Coeff. emmagasinement", 0.0001, 0.3, float(S), step=0.0001, format="%.4f"
         )
-        K_dt = st.slider(
-            "K — Perméabilité (m/s)", 1e-7, 1e-2, float(K),
-            step=1e-6, format="%.2e"
-        )
-        dist_dt = st.slider(
-            "r — Distance piézo/ouvrage (m)", 1.0, 500.0, float(distance), step=1.0
-        )
-        thick_dt = st.slider(
-            "b — Épaisseur aquifère (m)", 1.0, 100.0, float(thickness), step=0.5
-        )
-        t_max_dt = st.slider(
-            "t — Durée simulation (jours)", 1, 3650, 180, step=1
-        )
+        K_dt = st.slider("K — Perméabilité (m/s)", 1e-7, 1e-2, float(K), step=1e-6, format="%.2e")
+        dist_dt = st.slider("r — Distance piézo/ouvrage (m)", 1.0, 500.0, float(distance), step=1.0)
+        thick_dt = st.slider("b — Épaisseur aquifère (m)", 1.0, 100.0, float(thickness), step=0.5)
+        t_max_dt = st.slider("t — Durée simulation (jours)", 1, 3650, 180, step=1)
 
     with col_plot:
         t_arr, impact_spatial, impact_total = core.response_curve_data(
@@ -48,16 +37,18 @@ def render(chronicles, selection, target_name, freq, ok,
         )
 
         fig_resp, ax_resp = plt.subplots(figsize=(7, 4))
-        ax_resp.plot(t_arr, impact_spatial, color='#0d6efd', label='Impact Theis (spatial)')
+        ax_resp.plot(t_arr, impact_spatial, color="#0d6efd", label="Impact Theis (spatial)")
         ax_resp.plot(
-            t_arr, impact_total, color='#20c997', linestyle='--',
-            label='Impact total (spatial + volumétrique)'
+            t_arr,
+            impact_total,
+            color="#20c997",
+            linestyle="--",
+            label="Impact total (spatial + volumétrique)",
         )
-        ax_resp.axhline(niveau_base, color='#888', linestyle=':', label='Niveau de base')
+        ax_resp.axhline(niveau_base, color="#888", linestyle=":", label="Niveau de base")
         ax_resp.set_title(
-            f"Réponse piézométrique — Q={Q_dt:.0f} m³/j  "
-            f"K={K_dt:.1e} m/s  r={dist_dt:.0f} m",
-            fontsize=9
+            f"Réponse piézométrique — Q={Q_dt:.0f} m³/j  K={K_dt:.1e} m/s  r={dist_dt:.0f} m",
+            fontsize=9,
         )
         ax_resp.set_xlabel("Temps (jours)")
         ax_resp.set_ylabel("Niveau NGF (m)")

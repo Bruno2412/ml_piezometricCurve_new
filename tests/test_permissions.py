@@ -24,8 +24,8 @@ def _user(role, company_id=None):
 # is_global_master / is_company_master
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestRoleChecks:
 
+class TestRoleChecks:
     def test_is_global_master_true_for_global_master(self):
         assert permissions.is_global_master(_user(permissions.GLOBAL_MASTER)) is True
 
@@ -45,8 +45,8 @@ class TestRoleChecks:
 # can_administer_users
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestCanAdministerUsers:
 
+class TestCanAdministerUsers:
     @pytest.mark.parametrize("role", [permissions.GLOBAL_MASTER, permissions.COMPANY_MASTER])
     def test_admin_roles_can_administer_users(self, role):
         assert permissions.can_administer_users(_user(role)) is True
@@ -59,8 +59,8 @@ class TestCanAdministerUsers:
 # can_switch_company
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestCanSwitchCompany:
 
+class TestCanSwitchCompany:
     def test_global_master_can_switch_company(self):
         assert permissions.can_switch_company(_user(permissions.GLOBAL_MASTER)) is True
 
@@ -73,19 +73,15 @@ class TestCanSwitchCompany:
 # require_role
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestRequireRole:
 
+class TestRequireRole:
     def test_passes_silently_when_role_allowed(self):
         # Ne doit lever aucune exception.
-        permissions.require_role(
-            _user(permissions.GLOBAL_MASTER), (permissions.GLOBAL_MASTER,)
-        )
+        permissions.require_role(_user(permissions.GLOBAL_MASTER), (permissions.GLOBAL_MASTER,))
 
     def test_raises_permission_error_when_role_not_allowed(self):
         with pytest.raises(PermissionError):
-            permissions.require_role(
-                _user(permissions.USER), (permissions.GLOBAL_MASTER,)
-            )
+            permissions.require_role(_user(permissions.USER), (permissions.GLOBAL_MASTER,))
 
     def test_error_message_includes_role_and_allowed_roles(self):
         with pytest.raises(PermissionError, match="user") as exc_info:
@@ -100,8 +96,8 @@ class TestRequireRole:
 # effective_company_id
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestEffectiveCompanyId:
 
+class TestEffectiveCompanyId:
     def test_global_master_gets_viewing_company_id(self):
         user = _user(permissions.GLOBAL_MASTER)
         assert permissions.effective_company_id(user, "acme") == "acme"

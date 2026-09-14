@@ -24,3 +24,37 @@ dependencies = [
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6.0",
+    "pytest>=7.4.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["scripts/generate_requirements.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = [
+    "E501",  # lignes longues : beaucoup de docstrings/commentaires en
+             # français dépassent 100 caractères, pas une priorité à
+             # corriger tout de suite sur un repo existant
+    "N803",  # arguments en majuscule (Q, S, K, T...) : notation physique
+             # standard en hydrogéologie, pas un problème de style
+    "N806",  # idem pour les variables locales (GLon, GLat, GZ, R, T...)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# tab_admin.py importe streamlit/auth après son docstring de module,
+# volontairement ordonné ainsi pour la lisibilité : pas une priorité
+# à corriger sur un repo existant.
+"components/tab_admin.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

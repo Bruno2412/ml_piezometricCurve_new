@@ -57,8 +57,9 @@ def main():
         print("\nCompte company_master pour cette société :")
         email = input("  Email : ").strip()
         password = getpass.getpass("  Mot de passe : ")
-        create_user(email, password, role="company_master",
-                    company_id=company_id, company_name=company_name)
+        create_user(
+            email, password, role="company_master", company_id=company_id, company_name=company_name
+        )
 
     print("\nTerminé.")
 

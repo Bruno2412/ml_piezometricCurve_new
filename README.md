@@ -60,9 +60,16 @@ ml_piezometricCurve_new/
 │   ├── chronology_service.py
 │   └── analysis_service.py
 │
+├── scripts
+│   ├── generate_requirements.py
+│   └── ...
+│
 ├── tests/                        
 │   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_ades_pipe_file.py
 │   ├── test_data_loader.py
+│   ├── test_firebase_init.py
 │   ├── test_parsing.py
 │   ├── test_chronology.py
 │   ├── test_analysis.py

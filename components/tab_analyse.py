@@ -8,12 +8,24 @@ import streamlit as st
 
 import piezo_core as core
 
+
 @st.cache_data(show_spinner="Calcul de la validation en cours…")
 def cached_fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, n_bootstraps):
-    return core.fit_predict(df_fit, steps, future_dates, model_name, freq, ci_level, n_bootstraps=n_bootstraps)
+    return core.fit_predict(
+        df_fit, steps, future_dates, model_name, freq, ci_level, n_bootstraps=n_bootstraps
+    )
 
-def render(chronicles, selection, target_name, model_name,
-           future_years, validation_years, ci_pct, n_bootstraps):
+
+def render(
+    chronicles,
+    selection,
+    target_name,
+    model_name,
+    future_years,
+    validation_years,
+    ci_pct,
+    n_bootstraps,
+):
     """Retourne `freq` (fréquence détectée) pour être réutilisée par
     l'onglet Digital Twin, évitant de la recalculer deux fois."""
 
@@ -27,7 +39,7 @@ def render(chronicles, selection, target_name, model_name,
                 f"(clés disponibles : {list(chronicles.keys())})"
             )
             st.stop()
-        target_df = chronicles[target_idx]['df'].copy()
+        target_df = chronicles[target_idx]["df"].copy()
     except Exception as e:
         st.error(f"❌ Erreur lors de la récupération de la chronique cible : {e}")
         st.exception(e)
@@ -35,8 +47,8 @@ def render(chronicles, selection, target_name, model_name,
 
     # --- 2. Détection de la fréquence ---
     try:
-        freq = core.detect_frequency(target_df['date'])
-        #st.write(f"✅ fréquence détectée : {freq}")
+        freq = core.detect_frequency(target_df["date"])
+        # st.write(f"✅ fréquence détectée : {freq}")
     except Exception as e:
         st.error(f"❌ Erreur dans detect_frequency() : {e}")
         st.exception(e)
@@ -52,9 +64,7 @@ def render(chronicles, selection, target_name, model_name,
             if i not in chronicles:
                 st.warning(f"⚠️ La chronique chronicles[{i}] n'existe pas.")
                 continue
-            merged[f'level_aux{j}'] = core.align_chronicle(
-                chronicles[i]['df'], merged['date']
-            )
+            merged[f"level_aux{j}"] = core.align_chronicle(chronicles[i]["df"], merged["date"])
             j += 1
     except Exception as e:
         st.error(f"❌ Erreur lors de la construction de merged : {e}")
@@ -97,7 +107,7 @@ def render(chronicles, selection, target_name, model_name,
     try:
         with st.spinner("Calcul de la validation en cours…"):
             p_val, lo_v, hi_v = cached_fit_predict(
-                df_train, v_steps, df_val['date'], model_name, freq, ci_level, n_bootstraps
+                df_train, v_steps, df_val["date"], model_name, freq, ci_level, n_bootstraps
             )
     except Exception as e:
         st.error(f"❌ Erreur dans fit_predict() pendant la validation : {e}")
@@ -107,9 +117,7 @@ def render(chronicles, selection, target_name, model_name,
     # --- 9. Prévisions futures : dates ---
     try:
         fut_s = core.future_steps(freq, future_years)
-        fut_dates = pd.date_range(
-            merged['date'].max(), periods=fut_s + 1, freq=freq
-        )[1:]
+        fut_dates = pd.date_range(merged["date"].max(), periods=fut_s + 1, freq=freq)[1:]
     except Exception as e:
         st.error(f"❌ Erreur lors de la construction des dates futures : {e}")
         st.exception(e)
@@ -130,16 +138,13 @@ def render(chronicles, selection, target_name, model_name,
     try:
         fig2, ax = plt.subplots(figsize=(11, 6))
 
-        ax.plot(df_train['date'], df_train['level'], color='#2c7be5', label='Historique')
-        ax.plot(df_val['date'], df_val['level'], color='#f6c90e', label='Réel (contrôle)')
-        ax.plot(
-            df_val['date'], p_val, color='#e85d04', linestyle='--',
-            label='Modèle (validation)'
-        )
-        ax.fill_between(df_val['date'], lo_v, hi_v, alpha=0.15, color='#e85d04')
+        ax.plot(df_train["date"], df_train["level"], color="#2c7be5", label="Historique")
+        ax.plot(df_val["date"], df_val["level"], color="#f6c90e", label="Réel (contrôle)")
+        ax.plot(df_val["date"], p_val, color="#e85d04", linestyle="--", label="Modèle (validation)")
+        ax.fill_between(df_val["date"], lo_v, hi_v, alpha=0.15, color="#e85d04")
 
-        ax.plot(fut_dates, p_fut, color='#20c997', linestyle='--', label='Prévision')
-        ax.fill_between(fut_dates, lo_f, hi_f, alpha=0.15, color='#20c997')
+        ax.plot(fut_dates, p_fut, color="#20c997", linestyle="--", label="Prévision")
+        ax.fill_between(fut_dates, lo_f, hi_f, alpha=0.15, color="#20c997")
 
         ax.set_title(f"Prévision — {target_name} ({model_name})")
         ax.set_xlabel("Date")

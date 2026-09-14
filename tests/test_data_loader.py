@@ -25,10 +25,10 @@ import pytest
 
 from data import data_loader as dl
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Fixtures / helpers
 # ─────────────────────────────────────────────────────────────────────────
+
 
 class FakeUploadedFile(io.BytesIO):
     """Imite l'objet UploadedFile de Streamlit : un flux d'octets doté
@@ -63,8 +63,8 @@ def _isolate_tempdir(tmp_path, monkeypatch):
 # _parse_from_bytes — le helper interne partagé
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestParseFromBytes:
 
+class TestParseFromBytes:
     def test_calls_parse_fn_with_a_readable_temp_path(self):
         """Le chemin passé à parse_fn doit exister et contenir exactement
         les octets fournis, tant que parse_fn s'exécute."""
@@ -113,8 +113,8 @@ class TestParseFromBytes:
 # load_excel
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestLoadExcel:
 
+class TestLoadExcel:
     def test_returns_dataframe_and_filename(self):
         original = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
         fake_file = FakeUploadedFile(make_excel_bytes(original), "chroniques.xlsx")
@@ -139,8 +139,8 @@ class TestLoadExcel:
 # load_chroniques — export ADES brut (chroniques.txt), pipe-séparé
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestLoadChroniques:
 
+class TestLoadChroniques:
     def test_delegates_to_core_parse_chroniques_raw(self, monkeypatch):
         expected_df = pd.DataFrame({"point": ["P1"], "level": [12.3]})
         captured = {}
@@ -163,8 +163,8 @@ class TestLoadChroniques:
 # load_descriptif — coordonnées / nom / masse d'eau par point
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestLoadDescriptif:
 
+class TestLoadDescriptif:
     def test_delegates_to_core_parse_descriptif(self, monkeypatch):
         expected = {"P1": {"lat": 45.7, "lon": 4.8, "masse_eau": "FRDG123"}}
 
@@ -182,8 +182,8 @@ class TestLoadDescriptif:
 # load_masses_eau — libellés fiables des masses d'eau
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestLoadMassesEau:
 
+class TestLoadMassesEau:
     def test_delegates_to_core_parse_masses_eau(self, monkeypatch):
         expected = {"P1": "Alluvions du Rhône"}
 
@@ -201,13 +201,15 @@ class TestLoadMassesEau:
 # load_chroniques_auto — détection auto de format + nettoyage
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestLoadChroniquesAutoExcel:
 
+class TestLoadChroniquesAutoExcel:
     def test_reads_xlsx_and_returns_filename(self):
-        raw = pd.DataFrame({
-            "Côte NGF": ["123,45", "124,10"],
-            "Date de la mesure": ["01/03/2020", "02/03/2020"],
-        })
+        raw = pd.DataFrame(
+            {
+                "Côte NGF": ["123,45", "124,10"],
+                "Date de la mesure": ["01/03/2020", "02/03/2020"],
+            }
+        )
         fake_file = FakeUploadedFile(make_excel_bytes(raw), "export.xlsx")
 
         df, file_name = dl.load_chroniques_auto.__wrapped__(fake_file)
@@ -225,10 +227,12 @@ class TestLoadChroniquesAutoExcel:
         assert "  Côte NGF  " not in df.columns
 
     def test_converts_comma_decimal_numeric_columns_to_float(self):
-        raw = pd.DataFrame({
-            "Côte NGF": ["123,45", "124,10"],
-            "X_WGS84": ["4,8357", "4,8360"],
-        })
+        raw = pd.DataFrame(
+            {
+                "Côte NGF": ["123,45", "124,10"],
+                "X_WGS84": ["4,8357", "4,8360"],
+            }
+        )
         fake_file = FakeUploadedFile(make_excel_bytes(raw), "export.xlsx")
 
         df, _ = dl.load_chroniques_auto.__wrapped__(fake_file)
@@ -238,10 +242,12 @@ class TestLoadChroniquesAutoExcel:
         assert pd.api.types.is_numeric_dtype(df["Côte NGF"])
 
     def test_parses_french_dates_and_sorts_chronologically(self):
-        raw = pd.DataFrame({
-            "Date de la mesure": ["15/03/2021", "01/01/2021", "20/06/2021"],
-            "Côte NGF": ["100,0", "101,0", "102,0"],
-        })
+        raw = pd.DataFrame(
+            {
+                "Date de la mesure": ["15/03/2021", "01/01/2021", "20/06/2021"],
+                "Côte NGF": ["100,0", "101,0", "102,0"],
+            }
+        )
         fake_file = FakeUploadedFile(make_excel_bytes(raw), "export.xlsx")
 
         df, _ = dl.load_chroniques_auto.__wrapped__(fake_file)
@@ -253,10 +259,12 @@ class TestLoadChroniquesAutoExcel:
         assert df.iloc[0]["Côte NGF"] == pytest.approx(101.0)
 
     def test_drops_rows_with_unparseable_date(self):
-        raw = pd.DataFrame({
-            "Date de la mesure": ["15/03/2021", "date-invalide", "01/01/2021"],
-            "Côte NGF": ["100,0", "999,0", "101,0"],
-        })
+        raw = pd.DataFrame(
+            {
+                "Date de la mesure": ["15/03/2021", "date-invalide", "01/01/2021"],
+                "Côte NGF": ["100,0", "999,0", "101,0"],
+            }
+        )
         fake_file = FakeUploadedFile(make_excel_bytes(raw), "export.xlsx")
 
         df, _ = dl.load_chroniques_auto.__wrapped__(fake_file)
@@ -266,7 +274,6 @@ class TestLoadChroniquesAutoExcel:
 
 
 class TestLoadChroniquesAutoTxt:
-
     def test_reads_tab_separated_utf8_txt(self):
         content = "Côte NGF\tDate de la mesure\n123,45\t01/03/2020\n".encode("utf-8")
         fake_file = FakeUploadedFile(content, "export.txt")
@@ -305,4 +312,3 @@ class TestLoadChroniquesAutoTxt:
 
         with pytest.raises(ValueError, match="Format non supporté"):
             dl.load_chroniques_auto.__wrapped__(plain_bytesio)
-

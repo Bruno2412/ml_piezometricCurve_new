@@ -15,6 +15,7 @@ Lancer avec :
 """
 
 import matplotlib
+
 matplotlib.use("Agg")  # backend non interactif : indispensable en CI/headless
 
 import matplotlib.pyplot as plt
@@ -23,10 +24,10 @@ import pytest
 
 import piezo_core as core
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # build_piezo_surface
 # ─────────────────────────────────────────────────────────────────────────
+
 
 def _three_point_coords():
     return [
@@ -112,6 +113,7 @@ class TestBuildPiezoSurface:
 # surface_to_png_overlay
 # ─────────────────────────────────────────────────────────────────────────
 
+
 class TestSurfaceToPngOverlay:
     def _make_grid(self, n=20):
         coords = _three_point_coords()
@@ -152,11 +154,18 @@ class TestSurfaceToPngOverlay:
 # draw_nappe_2d_figure
 # ─────────────────────────────────────────────────────────────────────────
 
+
 class TestDrawNappe2dFigure:
     def _default_kwargs(self, **overrides):
         kwargs = dict(
-            Q=100.0, S=0.05, K=1e-4, thickness=10.0,
-            distance=150.0, time_days=180.0, Area=1000.0, niveau_base=100.0,
+            Q=100.0,
+            S=0.05,
+            K=1e-4,
+            thickness=10.0,
+            distance=150.0,
+            time_days=180.0,
+            Area=1000.0,
+            niveau_base=100.0,
         )
         kwargs.update(overrides)
         return kwargs

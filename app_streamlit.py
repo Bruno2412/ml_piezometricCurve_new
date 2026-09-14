@@ -25,9 +25,7 @@ pages = [
 ]
 
 if permissions.can_administer_users(st.session_state.user):
-    pages.append(
-        st.Page("app_pages/admin.py", title="Administration des comptes", icon="🔧")
-    )
+    pages.append(st.Page("app_pages/admin.py", title="Administration des comptes", icon="🔧"))
 
 nav = st.navigation(pages)
 nav.run()

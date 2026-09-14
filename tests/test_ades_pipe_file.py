@@ -17,7 +17,6 @@ import pytest
 
 import piezo_core as core
 
-
 CONTENT_ASCII = "Identifiant national BSS|Côte NGF\nBSS001|100,5\n"
 
 
@@ -46,6 +45,7 @@ class TestReadAdesPipeFile:
         p.write_bytes(content.encode("latin-1"))
 
         import pandas as pd
+
         original_read_csv = pd.read_csv
 
         def _fake_read_csv(*args, **kwargs):

@@ -52,6 +52,7 @@ def render():
         options=options,
         format_func=lambda cid: labels[cid],
         index=options.index(st.session_state.viewing_company_id)
-        if st.session_state.viewing_company_id in options else 0,
+        if st.session_state.viewing_company_id in options
+        else 0,
     )
     st.session_state.viewing_company_id = selected

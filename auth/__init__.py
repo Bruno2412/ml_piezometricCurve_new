@@ -28,10 +28,20 @@ from auth.permissions import (
 )
 
 __all__ = [
-    "authenticate", "create_user", "list_users", "set_user_active",
-    "GLOBAL_MASTER", "COMPANY_MASTER", "USER", "ADMIN_ROLES",
-    "is_global_master", "is_company_master", "can_administer_users",
-    "can_switch_company", "require_role", "effective_company_id",
+    "authenticate",
+    "create_user",
+    "list_users",
+    "set_user_active",
+    "GLOBAL_MASTER",
+    "COMPANY_MASTER",
+    "USER",
+    "ADMIN_ROLES",
+    "is_global_master",
+    "is_company_master",
+    "can_administer_users",
+    "can_switch_company",
+    "require_role",
+    "effective_company_id",
 ]
 # -*- coding: utf-8 -*-
 """
@@ -39,4 +49,3 @@ Created on Thu Sep 10 16:41:44 2026
 
 @author: bruno
 """
-

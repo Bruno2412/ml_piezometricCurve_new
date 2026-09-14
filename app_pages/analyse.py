@@ -9,14 +9,8 @@ app_streamlit.py, avant l'introduction de la navigation multi-pages.
 import streamlit as st
 
 import piezo_core as core
-
-from data.data_loader import (
-    load_chroniques_auto,
-    load_descriptif,
-    load_masses_eau
-)
-
-from components import tab_reseau, tab_analyse, tab_carte, tab_twin
+from components import tab_analyse, tab_carte, tab_reseau, tab_twin
+from data.data_loader import load_chroniques_auto, load_descriptif, load_masses_eau
 
 st.title("Piézométrie - Digital Twin - ...")
 
@@ -52,24 +46,20 @@ with st.sidebar:
 excel_file, chroniques_file, descriptif_file, masses_eau_file = None, None, None, None
 for f in uploaded_files or []:
     fname = f.name.strip().lower()
-    if fname.endswith(('.xlsx', '.xls')):
+    if fname.endswith((".xlsx", ".xls")):
         excel_file = f
-    elif fname == 'chroniques.txt':
+    elif fname == "chroniques.txt":
         chroniques_file = f
-    elif fname == 'descriptif.txt':
+    elif fname == "descriptif.txt":
         descriptif_file = f
-    elif fname == 'masseseau.txt':
+    elif fname == "masseseau.txt":
         masses_eau_file = f
 
 # ── Traitement principal si des chroniques sont chargées ─────────────────
 if chroniques_file is not None or excel_file is not None:
     # 1. Chargement des chroniques : export ADES brut en priorité,
     #    sinon Excel déjà préparé (compatibilité ascendante)
-    uploaded_chroniques = (
-        chroniques_file
-        if chroniques_file is not None
-        else excel_file
-    )
+    uploaded_chroniques = chroniques_file if chroniques_file is not None else excel_file
 
     try:
         df_raw, _file_name = load_chroniques_auto(uploaded_chroniques)
@@ -100,7 +90,7 @@ if chroniques_file is not None or excel_file is not None:
         # fiable dans les infobulles de la carte.
         for bss_id, label in masses_eau_dict.items():
             if bss_id in coords_dict:
-                coords_dict[bss_id]['masse_eau'] = label
+                coords_dict[bss_id]["masse_eau"] = label
 
     # 3. Parsing des chroniques
     try:
@@ -108,11 +98,13 @@ if chroniques_file is not None or excel_file is not None:
         if masses_eau_dict:
             # chroniques.txt seul ne contient pas la masse d'eau : on
             # l'injecte ici depuis MassesEau.txt, par point (BSS id).
-            source_df['masse_eau'] = (
-                source_df['point'].map(masses_eau_dict).fillna(source_df['masse_eau'])
+            source_df["masse_eau"] = (
+                source_df["point"].map(masses_eau_dict).fillna(source_df["masse_eau"])
             )
-            has_masse = source_df['masse_eau'].str.len().gt(0).any()
-        st.sidebar.success(f"✓ {len(points)} points détectés" + ("" if has_masse else " (⚠ pas de masse d'eau)"))
+            has_masse = source_df["masse_eau"].str.len().gt(0).any()
+        st.sidebar.success(
+            f"✓ {len(points)} points détectés" + ("" if has_masse else " (⚠ pas de masse d'eau)")
+        )
     except Exception as e:
         st.sidebar.error(f"Erreur parsing : {e}")
         points = []
@@ -123,42 +115,50 @@ if chroniques_file is not None or excel_file is not None:
         selection = st.sidebar.multiselect(
             "Points piézométriques (3 minimum)",
             options=points,
-            default=points[:min(3, len(points))]
+            default=points[: min(3, len(points))],
         )
 
         if len(selection) < 3:
-            st.warning(f"Veuillez sélectionner au moins 3 points dans le menu latéral ({len(selection)} actuellement sélectionné(s)).")
+            st.warning(
+                f"Veuillez sélectionner au moins 3 points dans le menu latéral ({len(selection)} actuellement sélectionné(s))."
+            )
         else:
             target_name = st.sidebar.selectbox("Piézomètre à prévoir", selection)
 
             chronicles = {}
             ok = True
             for i, name in enumerate(selection, start=1):
-                sub = source_df.loc[source_df['point'] == name, ['date', 'level']].reset_index(drop=True)
+                sub = source_df.loc[source_df["point"] == name, ["date", "level"]].reset_index(
+                    drop=True
+                )
                 if len(sub) < 24:
                     st.sidebar.error(f"Point « {name} » : {len(sub)} obs. (min 24).")
                     ok = False
                     break
-                masse_vals = source_df.loc[source_df['point'] == name, 'masse_eau']
+                masse_vals = source_df.loc[source_df["point"] == name, "masse_eau"]
                 chronicles[i] = {
-                    'df': sub,
-                    'name': name,
-                    'masse_eau': masse_vals.iloc[0] if len(masse_vals) else '',
+                    "df": sub,
+                    "name": name,
+                    "masse_eau": masse_vals.iloc[0] if len(masse_vals) else "",
                 }
 
             if ok:
                 if has_masse:
-                    masses = {c['masse_eau'].strip().lower() for c in chronicles.values()}
+                    masses = {c["masse_eau"].strip().lower() for c in chronicles.values()}
                     if len(masses) > 1:
                         st.sidebar.error("Points issus de masses d'eau différentes.")
                         ok = False
                     else:
-                        st.sidebar.success(f"✓ Même masse d'eau : {list(chronicles.values())[0]['masse_eau']}")
+                        st.sidebar.success(
+                            f"✓ Même masse d'eau : {list(chronicles.values())[0]['masse_eau']}"
+                        )
                 else:
                     st.sidebar.warning("Masse d'eau non renseignée — à vérifier")
 
                 # 5. Affichage des Onglets
-                tab1, tab2, tab3, tab4 = st.tabs(["Réseau", "Analyse & Prévision", "Carte Piézométrique", "Digital Twin"])
+                tab1, tab2, tab3, tab4 = st.tabs(
+                    ["Réseau", "Analyse & Prévision", "Carte Piézométrique", "Digital Twin"]
+                )
 
                 with tab1:
                     tab_reseau.render(chronicles)
@@ -186,7 +186,9 @@ if chroniques_file is not None or excel_file is not None:
                         target_name=target_name,
                         freq=freq,
                         ok=ok,
-                        Q=Q, S=S, K=K,
+                        Q=Q,
+                        S=S,
+                        K=K,
                         thickness=thickness,
                         distance=distance,
                         Area=Area,

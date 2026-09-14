@@ -30,8 +30,7 @@ _init_firebase()
 
 _API_KEY = st.secrets["firebase"]["api_key"]
 _SIGN_IN_URL = (
-    f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
-    f"?key={_API_KEY}"
+    f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={_API_KEY}"
 )
 
 
@@ -121,7 +120,6 @@ def authenticate(email: str, password: str) -> dict | None:
         "role": role,
         "company_id": claims.get("company_id"),
         "company_name": claims.get("company_name"),
-
         # Le token est conservé en session pour les vérifications
         # ultérieures.
         "id_token": id_token,
@@ -162,17 +160,22 @@ def list_users(current_user: dict):
         if role is None:
             continue  # compte pas encore configuré, on l'ignore dans la liste
 
-        if current_user["role"] == "company_master" and claims.get("company_id") != current_user["company_id"]:
+        if (
+            current_user["role"] == "company_master"
+            and claims.get("company_id") != current_user["company_id"]
+        ):
             continue
 
-        result.append({
-            "uid": u.uid,
-            "email": u.email,
-            "role": role,
-            "company_id": claims.get("company_id"),
-            "company_name": claims.get("company_name"),
-            "disabled": u.disabled,
-        })
+        result.append(
+            {
+                "uid": u.uid,
+                "email": u.email,
+                "role": role,
+                "company_id": claims.get("company_id"),
+                "company_name": claims.get("company_name"),
+                "disabled": u.disabled,
+            }
+        )
     return result
 
 

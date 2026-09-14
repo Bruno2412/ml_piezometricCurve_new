@@ -27,7 +27,9 @@ st.secrets = {
     "firebase": {"api_key": "fake-api-key"},
 }
 
-with mock.patch("firebase_admin.credentials.Certificate"), \
-     mock.patch("firebase_admin.initialize_app"), \
-     mock.patch("firebase_admin._apps", {}):
+with (
+    mock.patch("firebase_admin.credentials.Certificate"),
+    mock.patch("firebase_admin.initialize_app"),
+    mock.patch("firebase_admin._apps", {}),
+):
     import auth  # noqa: F401  (déclenche l'import unique de auth.authentication)

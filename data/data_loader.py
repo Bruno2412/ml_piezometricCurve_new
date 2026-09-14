@@ -27,6 +27,7 @@ def _parse_from_bytes(file_bytes: bytes, parse_fn):
     finally:
         os.remove(tmp_path)
 
+
 @st.cache_data(show_spinner="Lecture des chroniques...")
 def load_chroniques_auto(uploaded_file):
     file_name = getattr(uploaded_file, "name", str(uploaded_file))
@@ -79,9 +80,7 @@ def load_chroniques_auto(uploaded_file):
             df["Date de la mesure"], dayfirst=True, errors="coerce"
         )
         # Supprime les lignes où la date n'a pas pu être lue et trie chronologiquement
-        df = df.dropna(subset=["Date de la mesure"]).sort_values(
-            "Date de la mesure"
-        )
+        df = df.dropna(subset=["Date de la mesure"]).sort_values("Date de la mesure")
 
     return df, file_name
 

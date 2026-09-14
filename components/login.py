@@ -32,7 +32,6 @@ def require_login():
     st.title("Connexion — Expert Piézométrie Pro")
 
     with st.form("login_form"):
-
         email = st.text_input(
             "Email",
             placeholder="nom@entreprise.fr",
@@ -49,23 +48,19 @@ def require_login():
         )
 
     if submitted:
-
         if not email or not password:
             st.error("Veuillez renseigner votre email et votre mot de passe.")
             st.stop()
 
         with st.spinner("Authentification..."):
-
             user = authentication.authenticate(
                 email=email,
                 password=password,
             )
 
         if user is None:
-
             st.error(
-                "Connexion impossible. "
-                "Vérifiez vos identifiants ou contactez votre administrateur."
+                "Connexion impossible. Vérifiez vos identifiants ou contactez votre administrateur."
             )
 
             st.stop()
@@ -103,15 +98,12 @@ def render_user_badge():
     if user.get("company_name"):
         label += f" — {user['company_name']}"
 
-    st.sidebar.caption(
-        f"Connecté : {label}"
-    )
+    st.sidebar.caption(f"Connecté : {label}")
 
     if st.sidebar.button(
         "Se déconnecter",
         use_container_width=True,
     ):
-
         # Suppression de toutes les informations
         # d'authentification de la session.
         st.session_state.pop(

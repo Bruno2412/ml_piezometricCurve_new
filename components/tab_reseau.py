@@ -9,12 +9,12 @@ import piezo_core as core
 
 def render(chronicles):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20, 6.5))
-    cmap = plt.get_cmap('tab10')
+    cmap = plt.get_cmap("tab10")
     colors = {i: cmap((i - 1) % 10) for i in chronicles.keys()}
     for i, c in chronicles.items():
-        ax1.plot(c['df']['date'], c['df']['level'], color=colors[i], label=c['name'])
-        z = (c['df']['level'] - c['df']['level'].mean()) / (c['df']['level'].std() or 1)
-        ax2.plot(c['df']['date'], z, color=colors[i], label=c['name'])
+        ax1.plot(c["df"]["date"], c["df"]["level"], color=colors[i], label=c["name"])
+        z = (c["df"]["level"] - c["df"]["level"].mean()) / (c["df"]["level"].std() or 1)
+        ax2.plot(c["df"]["date"], z, color=colors[i], label=c["name"])
     ax1.set_title("Chroniques brutes")
     ax1.legend()
     ax1.grid(alpha=0.25)

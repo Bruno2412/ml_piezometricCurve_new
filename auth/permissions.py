@@ -46,18 +46,16 @@ def require_role(user: dict, allowed_roles: tuple):
     dans allowed_roles. À utiliser en tête d'un écran d'admin, par
     exemple : permissions.require_role(user, (permissions.GLOBAL_MASTER,))"""
     if user["role"] not in allowed_roles:
-        raise PermissionError(
-            f"Rôle '{user['role']}' insuffisant (requis : {allowed_roles})."
-        )
+        raise PermissionError(f"Rôle '{user['role']}' insuffisant (requis : {allowed_roles}).")
 
 
 def effective_company_id(user: dict, viewing_company_id: str | None) -> str | None:
     """Détermine la société dont les données doivent être affichées :
-      - global_master : celle qu'il a choisie via le sélecteur
-        (viewing_company_id), ou None s'il n'a encore rien choisi
-        (vue globale / à définir selon le besoin de l'app).
-      - company_master / user : toujours la leur, le sélecteur ne
-        s'applique pas à eux (viewing_company_id est ignoré)."""
+    - global_master : celle qu'il a choisie via le sélecteur
+      (viewing_company_id), ou None s'il n'a encore rien choisi
+      (vue globale / à définir selon le besoin de l'app).
+    - company_master / user : toujours la leur, le sélecteur ne
+      s'applique pas à eux (viewing_company_id est ignoré)."""
     if is_global_master(user):
         return viewing_company_id
     return user["company_id"]
