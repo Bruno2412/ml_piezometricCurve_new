@@ -20,6 +20,7 @@ from statsmodels.tsa.stattools import adfuller
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
 from scipy.interpolate import griddata
+from scipy.spatial import QhullError
 from matplotlib.patches import Circle
 from xgboost import XGBRegressor
 import matplotlib.pyplot as plt
@@ -649,5 +650,12 @@ def build_piezo_surface(coords, values, n=120, margin_ratio=0.3):
     grid_lat = np.linspace(lats.min() - span_lat * margin_ratio,
                             lats.max() + span_lat * margin_ratio, n)
     GLon, GLat = np.meshgrid(grid_lon, grid_lat)
-    GZ = griddata((lons, lats), vals, (GLon, GLat), method='linear')
+    try:
+        GZ = griddata((lons, lats), vals, (GLon, GLat), method='linear')
+    except QhullError:
+        # Points sources dégénérés (colinéaires, ex. même longitude) :
+        # impossible de construire une triangulation Delaunay. On se
+        # replie sur le plus proche voisin, qui ne nécessite pas de
+        # triangulation, plutôt que de laisser planter l'application.
+        GZ = griddata((lons, lats), vals, (GLon, GLat), method='nearest')
     return GLon, GLat, GZ
