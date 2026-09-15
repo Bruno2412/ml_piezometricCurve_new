@@ -139,6 +139,12 @@ def create_user(current_user, email, password, role, company_id=None, company_na
     qui appelle cette fonction — sans quoi rien n'empêchait un appel
     direct de créer un global_master ou un company_master pour une
     société tierce (voir auth.permissions.can_create_user_for)."""
+    if role == "company_master" and not permissions.can_assign_company_master(
+        current_user
+    ):
+        raise PermissionError(
+            "Seul un global_master peut attribuer le rôle company_master."
+        )
     if not permissions.can_create_user_for(current_user, role, company_id):
         raise PermissionError(
             f"Le rôle '{current_user['role']}' ne peut pas créer un compte "
@@ -151,7 +157,7 @@ def create_user(current_user, email, password, role, company_id=None, company_na
         raise ValueError("company_id est obligatoire pour ce rôle.")
 
     user_record = fb_auth.create_user(email=email, password=password)
-
+    
     claims = {"role": role}
     if company_id is not None:
         claims["company_id"] = company_id
@@ -207,3 +213,43 @@ def set_user_active(current_user, target: dict, is_active: bool):
     if not permissions.can_modify_target(current_user, target):
         raise PermissionError("Droits insuffisants pour modifier ce compte.")
     fb_auth.update_user(target["uid"], disabled=not is_active)
+
+
+def list_companies():
+    """
+    Retourne la liste des sociétés connues dans les comptes Firebase.
+
+    Une société est identifiée par son company_id.
+    Les comptes global_master, qui ne sont pas rattachés à une société,
+    sont ignorés.
+
+    Retour :
+        Liste de dictionnaires :
+        [
+            {
+                "company_id": "...",
+                "company_name": "..."
+            },
+            ...
+        ]
+    """
+    companies = {}
+
+    for user in fb_auth.list_users().iterate_all():
+        claims = user.custom_claims or {}
+
+        company_id = claims.get("company_id")
+        company_name = claims.get("company_name")
+
+        if not company_id or not company_name:
+            continue
+
+        companies[company_id] = {
+            "company_id": company_id,
+            "company_name": company_name,
+        }
+
+    return sorted(
+        companies.values(),
+        key=lambda company: company["company_name"].lower(),
+    )

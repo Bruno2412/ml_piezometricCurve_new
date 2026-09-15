@@ -8,12 +8,21 @@ de l'app puisse écrire `from piezo_app import auth` puis
 soucier de savoir dans quel sous-module elles vivent réellement.
 """
 
+# from piezo_app.auth.authentication import (
+#     authenticate,
+#     create_user,
+#     list_users,
+#     set_user_active,
+# )
+
 from piezo_app.auth.authentication import (
     authenticate,
     create_user,
+    list_companies,
     list_users,
     set_user_active,
 )
+
 from piezo_app.auth.permissions import (
     ADMIN_ROLES,
     COMPANY_MASTER,
@@ -29,6 +38,7 @@ from piezo_app.auth.permissions import (
 
 __all__ = [
     "authenticate",
+    "list_companies",
     "create_user",
     "list_users",
     "set_user_active",
