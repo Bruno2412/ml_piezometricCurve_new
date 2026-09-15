@@ -71,10 +71,20 @@ def render():
             col_email.write(u["email"])
             col_role.write(u["role"])
             col_status.write("🔴 Désactivé" if u["disabled"] else "🟢 Actif")
-            action_label = "Réactiver" if u["disabled"] else "Désactiver"
-            if col_action.button(action_label, key=f"toggle_{u['uid']}"):
-                authentication.set_user_active(u["uid"], is_active=u["disabled"])
-                st.rerun()
+
+            # Le bouton n'est même pas affiché sur son propre compte ou
+            # sur un global_master : ce n'est pas qu'une question de
+            # cosmétique, authentication.set_user_active() refuserait de
+            # toute façon l'action (auth.permissions.can_modify_target),
+            # mais autant ne pas présenter une action vouée à échouer.
+            if permissions.can_modify_target(user, u):
+                action_label = "Réactiver" if u["disabled"] else "Désactiver"
+                if col_action.button(action_label, key=f"toggle_{u['uid']}"):
+                    try:
+                        authentication.set_user_active(user, u, is_active=u["disabled"])
+                        st.rerun()
+                    except PermissionError as e:
+                        st.error(str(e))
 
     st.divider()
     st.subheader("Créer un nouvel utilisateur")
@@ -106,6 +116,7 @@ def render():
             else:
                 try:
                     authentication.create_user(
+                        current_user=user,
                         email=new_email,
                         password=new_password,
                         role=new_role,
@@ -114,6 +125,8 @@ def render():
                     )
                     st.success(f"Compte {new_email} créé avec succès.")
                     st.rerun()
+                except PermissionError as e:
+                    st.error(str(e))
                 except ValueError as e:
                     st.error(str(e))
                 except Exception as e:

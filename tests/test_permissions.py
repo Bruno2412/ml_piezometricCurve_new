@@ -97,6 +97,79 @@ class TestRequireRole:
 # ─────────────────────────────────────────────────────────────────────────
 
 
+class TestCanCreateUserFor:
+    def test_global_master_can_create_company_master_anywhere(self):
+        actor = _user(permissions.GLOBAL_MASTER)
+        assert permissions.can_create_user_for(actor, permissions.COMPANY_MASTER, "acme") is True
+
+    def test_global_master_can_create_user_anywhere(self):
+        actor = _user(permissions.GLOBAL_MASTER)
+        assert permissions.can_create_user_for(actor, permissions.USER, "acme") is True
+
+    def test_company_master_can_create_user_for_its_own_company(self):
+        actor = _user(permissions.COMPANY_MASTER, company_id="acme")
+        assert permissions.can_create_user_for(actor, permissions.USER, "acme") is True
+
+    def test_company_master_cannot_create_user_for_another_company(self):
+        actor = _user(permissions.COMPANY_MASTER, company_id="acme")
+        assert permissions.can_create_user_for(actor, permissions.USER, "other") is False
+
+    def test_company_master_cannot_create_company_master(self):
+        actor = _user(permissions.COMPANY_MASTER, company_id="acme")
+        assert permissions.can_create_user_for(actor, permissions.COMPANY_MASTER, "acme") is False
+
+    def test_standard_user_cannot_create_anyone(self):
+        actor = _user(permissions.USER, company_id="acme")
+        assert permissions.can_create_user_for(actor, permissions.USER, "acme") is False
+
+    @pytest.mark.parametrize("role", [permissions.GLOBAL_MASTER, permissions.COMPANY_MASTER])
+    def test_nobody_can_create_a_global_master(self, role):
+        actor = _user(role)
+        assert permissions.can_create_user_for(actor, permissions.GLOBAL_MASTER, None) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# can_modify_target
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _target(uid, role, company_id=None):
+    return {"uid": uid, "role": role, "company_id": company_id}
+
+
+class TestCanModifyTarget:
+    def test_global_master_can_modify_a_user(self):
+        actor = _user(permissions.GLOBAL_MASTER) | {"uid": "gm-1"}
+        target = _target("u-1", permissions.USER, "acme")
+        assert permissions.can_modify_target(actor, target) is True
+
+    def test_company_master_can_modify_user_of_its_own_company(self):
+        actor = _user(permissions.COMPANY_MASTER, company_id="acme") | {"uid": "cm-1"}
+        target = _target("u-1", permissions.USER, "acme")
+        assert permissions.can_modify_target(actor, target) is True
+
+    def test_company_master_cannot_modify_user_of_another_company(self):
+        actor = _user(permissions.COMPANY_MASTER, company_id="acme") | {"uid": "cm-1"}
+        target = _target("u-1", permissions.USER, "other")
+        assert permissions.can_modify_target(actor, target) is False
+
+    def test_standard_user_cannot_modify_anyone(self):
+        actor = _user(permissions.USER, company_id="acme") | {"uid": "u-1"}
+        target = _target("u-2", permissions.USER, "acme")
+        assert permissions.can_modify_target(actor, target) is False
+
+    def test_nobody_can_modify_a_global_master(self):
+        actor = _user(permissions.GLOBAL_MASTER) | {"uid": "gm-1"}
+        target = _target("gm-2", permissions.GLOBAL_MASTER)
+        assert permissions.can_modify_target(actor, target) is False
+
+    @pytest.mark.parametrize("role", [permissions.GLOBAL_MASTER, permissions.COMPANY_MASTER])
+    def test_cannot_modify_own_account(self, role):
+        actor = _user(role, company_id="acme") | {"uid": "same-uid"}
+        target = _target("same-uid", role, "acme")
+        assert permissions.can_modify_target(actor, target) is False
+
+
 class TestEffectiveCompanyId:
     def test_global_master_gets_viewing_company_id(self):
         user = _user(permissions.GLOBAL_MASTER)

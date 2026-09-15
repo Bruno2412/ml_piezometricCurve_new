@@ -16,6 +16,8 @@ import streamlit as st
 from firebase_admin import auth as fb_auth
 from firebase_admin import credentials
 
+from piezo_app.auth import permissions
+
 
 def _init_firebase():
     """Initialise l'app Firebase Admin une seule fois (Streamlit relance
@@ -128,9 +130,21 @@ def authenticate(email: str, password: str) -> dict | None:
     }
 
 
-def create_user(email, password, role, company_id=None, company_name=None):
+def create_user(current_user, email, password, role, company_id=None, company_name=None):
     """Crée un compte Firebase et lui attribue son rôle (+ société si
-    applicable) via les custom claims."""
+    applicable) via les custom claims.
+
+    Applique désormais le même principe que list_users() : les droits
+    sont vérifiés ICI, pas seulement dans le formulaire de tab_admin.py
+    qui appelle cette fonction — sans quoi rien n'empêchait un appel
+    direct de créer un global_master ou un company_master pour une
+    société tierce (voir auth.permissions.can_create_user_for)."""
+    if not permissions.can_create_user_for(current_user, role, company_id):
+        raise PermissionError(
+            f"Le rôle '{current_user['role']}' ne peut pas créer un compte "
+            f"'{role}'" + (f" pour la société '{company_id}'." if company_id else ".")
+        )
+
     if role == "global_master" and company_id is not None:
         raise ValueError("Un global_master ne doit pas être rattaché à une société.")
     if role in ("company_master", "user") and company_id is None:
@@ -179,5 +193,17 @@ def list_users(current_user: dict):
     return result
 
 
-def set_user_active(uid: str, is_active: bool):
-    fb_auth.update_user(uid, disabled=not is_active)
+def set_user_active(current_user, target: dict, is_active: bool):
+    """Active/désactive un compte via le flag `disabled` de Firebase
+    Auth — le compte n'est jamais supprimé, son historique (uid, dates
+    de création/dernière connexion côté Firebase) reste intact, ce qui
+    permet de retrouver les actions passées d'un compte désactivé.
+
+    `target` doit être l'entrée telle que renvoyée par list_users()
+    (donc au moins {"uid", "role", "company_id"}). Les droits sont
+    vérifiés ici : personne ne se désactive soi-même par ce chemin,
+    personne ne touche un global_master, et un company_master reste
+    cantonné aux comptes de sa société (auth.permissions.can_modify_target)."""
+    if not permissions.can_modify_target(current_user, target):
+        raise PermissionError("Droits insuffisants pour modifier ce compte.")
+    fb_auth.update_user(target["uid"], disabled=not is_active)

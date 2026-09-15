@@ -49,6 +49,56 @@ def require_role(user: dict, allowed_roles: tuple):
         raise PermissionError(f"Rôle '{user['role']}' insuffisant (requis : {allowed_roles}).")
 
 
+def can_create_user_for(actor: dict, target_role: str, target_company_id: str | None) -> bool:
+    """Décide si `actor` a le droit de créer un compte de rôle et de
+    société donnés. Reprend la colonne "Créer user" / "Créer company
+    master" de la matrice de droits :
+      - un global_master peut créer un company_master ou un user, pour
+        n'importe quelle société ;
+      - un company_master ne peut créer qu'un user, et uniquement dans
+        SA propre société ;
+      - personne ne peut créer de global_master depuis cette fonction
+        (compte réservé, création hors admin).
+
+    À appeler à la fois côté UI (pour construire le formulaire) et côté
+    auth.authentication.create_user (pour ne pas dépendre uniquement de
+    ce que l'UI a bien voulu afficher — voir list_users() qui applique
+    déjà ce principe pour la lecture)."""
+    if target_role == GLOBAL_MASTER:
+        return False
+
+    if is_global_master(actor):
+        return target_role in (COMPANY_MASTER, USER)
+
+    if is_company_master(actor):
+        return target_role == USER and target_company_id == actor["company_id"]
+
+    return False
+
+
+def can_modify_target(actor: dict, target: dict) -> bool:
+    """Décide si `actor` a le droit d'agir sur CE compte précis
+    (désactiver/réactiver, éditer). Centralise les garde-fous
+    anti-escalade qui ne peuvent pas être déduits du rôle de l'acteur
+    seul :
+      - un compte ne peut pas être modifié par son propre titulaire par
+        ce chemin (pas d'auto-désactivation depuis l'admin) ;
+      - un global_master ne peut être modifié par personne, pas même un
+        autre global_master ;
+      - un company_master reste cantonné aux comptes de sa société.
+
+    `target` doit contenir au moins {"uid", "role", "company_id"}."""
+    if not can_administer_users(actor):
+        return False
+    if target["uid"] == actor["uid"]:
+        return False
+    if target["role"] == GLOBAL_MASTER:
+        return False
+    if is_company_master(actor) and target["company_id"] != actor["company_id"]:
+        return False
+    return True
+
+
 def effective_company_id(user: dict, viewing_company_id: str | None) -> str | None:
     """Détermine la société dont les données doivent être affichées :
     - global_master : celle qu'il a choisie via le sélecteur

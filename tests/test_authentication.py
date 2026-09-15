@@ -238,39 +238,50 @@ class TestAuthenticate:
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _global_master(uid="gm-1"):
+    return {"uid": uid, "role": "global_master", "company_id": None}
+
+
+def _company_master(company_id="acme", uid="cm-1"):
+    return {"uid": uid, "role": "company_master", "company_id": company_id}
+
+
 class TestCreateUser:
-    def test_global_master_with_company_id_raises_value_error(self):
-        with pytest.raises(ValueError):
-            authentication.create_user(
-                "a@b.com",
-                "pw",
-                "global_master",
-                company_id="acme",
-            )
+    # Remarque : le cas "global_master + company_id -> ValueError" a
+    # disparu, car il est désormais intercepté plus tôt par la
+    # vérification des droits (test_nobody_can_create_a_global_master
+    # ci-dessous) : personne ne peut créer de global_master par ce
+    # chemin, avec ou sans company_id.
 
     @pytest.mark.parametrize("role", ["company_master", "user"])
     def test_scoped_role_without_company_id_raises_value_error(self, role):
         with pytest.raises(ValueError):
-            authentication.create_user("a@b.com", "pw", role, company_id=None)
+            authentication.create_user(_global_master(), "a@b.com", "pw", role, company_id=None)
 
-    def test_creates_global_master_with_no_company_claims(self):
-        with (
-            mock.patch.object(
-                authentication.fb_auth,
-                "create_user",
-                return_value=_fake_user_record(uid="new-uid"),
-            ),
-            mock.patch.object(
-                authentication.fb_auth,
-                "set_custom_user_claims",
-            ) as mocked_set_claims,
-        ):
-            uid = authentication.create_user("a@b.com", "pw", "global_master")
+    def test_nobody_can_create_a_global_master(self):
+        # La création de global_master reste hors du périmètre de
+        # l'admin (2 comptes de bootstrap, voir create_first_users.py) :
+        # même un global_master ne peut pas en créer un via ce chemin.
+        with pytest.raises(PermissionError):
+            authentication.create_user(_global_master(), "a@b.com", "pw", "global_master")
 
-        assert uid == "new-uid"
-        mocked_set_claims.assert_called_once_with("new-uid", {"role": "global_master"})
+    def test_company_master_cannot_create_company_master(self):
+        with pytest.raises(PermissionError):
+            authentication.create_user(
+                _company_master(), "a@b.com", "pw", "company_master", company_id="acme"
+            )
 
-    def test_creates_company_scoped_user_with_company_claims(self):
+    def test_company_master_cannot_create_user_for_another_company(self):
+        with pytest.raises(PermissionError):
+            authentication.create_user(
+                _company_master(company_id="acme"),
+                "a@b.com",
+                "pw",
+                "user",
+                company_id="other-company",
+            )
+
+    def test_global_master_creates_company_scoped_user_with_company_claims(self):
         with (
             mock.patch.object(
                 authentication.fb_auth,
@@ -283,6 +294,33 @@ class TestCreateUser:
             ) as mocked_set_claims,
         ):
             authentication.create_user(
+                _global_master(),
+                "a@b.com",
+                "pw",
+                "user",
+                company_id="acme",
+                company_name="ACME Corp",
+            )
+
+        mocked_set_claims.assert_called_once_with(
+            "new-uid",
+            {"role": "user", "company_id": "acme", "company_name": "ACME Corp"},
+        )
+
+    def test_company_master_creates_user_for_its_own_company(self):
+        with (
+            mock.patch.object(
+                authentication.fb_auth,
+                "create_user",
+                return_value=_fake_user_record(uid="new-uid"),
+            ),
+            mock.patch.object(
+                authentication.fb_auth,
+                "set_custom_user_claims",
+            ) as mocked_set_claims,
+        ):
+            authentication.create_user(
+                _company_master(company_id="acme"),
                 "a@b.com",
                 "pw",
                 "user",
@@ -382,12 +420,44 @@ class TestListUsers:
 
 
 class TestSetUserActive:
-    def test_deactivates_user(self):
+    def test_global_master_deactivates_a_user(self):
+        target = {"uid": "uid-1", "role": "user", "company_id": "acme"}
         with mock.patch.object(authentication.fb_auth, "update_user") as mocked:
-            authentication.set_user_active("uid-1", is_active=False)
+            authentication.set_user_active(_global_master(), target, is_active=False)
         mocked.assert_called_once_with("uid-1", disabled=True)
 
-    def test_reactivates_user(self):
+    def test_global_master_reactivates_a_user(self):
+        target = {"uid": "uid-1", "role": "user", "company_id": "acme"}
         with mock.patch.object(authentication.fb_auth, "update_user") as mocked:
-            authentication.set_user_active("uid-1", is_active=True)
+            authentication.set_user_active(_global_master(), target, is_active=True)
         mocked.assert_called_once_with("uid-1", disabled=False)
+
+    def test_company_master_deactivates_user_of_its_own_company(self):
+        actor = _company_master(company_id="acme")
+        target = {"uid": "uid-1", "role": "user", "company_id": "acme"}
+        with mock.patch.object(authentication.fb_auth, "update_user") as mocked:
+            authentication.set_user_active(actor, target, is_active=False)
+        mocked.assert_called_once_with("uid-1", disabled=True)
+
+    def test_company_master_cannot_deactivate_user_of_another_company(self):
+        actor = _company_master(company_id="acme")
+        target = {"uid": "uid-1", "role": "user", "company_id": "other-company"}
+        with mock.patch.object(authentication.fb_auth, "update_user") as mocked:
+            with pytest.raises(PermissionError):
+                authentication.set_user_active(actor, target, is_active=False)
+        mocked.assert_not_called()
+
+    def test_nobody_can_deactivate_a_global_master(self):
+        actor = _global_master(uid="gm-1")
+        target = _global_master(uid="gm-2")
+        with mock.patch.object(authentication.fb_auth, "update_user") as mocked:
+            with pytest.raises(PermissionError):
+                authentication.set_user_active(actor, target, is_active=False)
+        mocked.assert_not_called()
+
+    def test_cannot_deactivate_own_account(self):
+        actor = _company_master(company_id="acme", uid="cm-1")
+        with mock.patch.object(authentication.fb_auth, "update_user") as mocked:
+            with pytest.raises(PermissionError):
+                authentication.set_user_active(actor, actor, is_active=False)
+        mocked.assert_not_called()
