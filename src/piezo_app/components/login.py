@@ -47,6 +47,12 @@ def require_login():
             use_container_width=True,
         )
 
+    st.page_link(
+        "src/piezo_app/app_pages/inscription.py",
+        label="Pas encore de compte ? Créer un compte",
+        icon="📝",
+    )
+
     if submitted:
         if not email or not password:
             st.error("Veuillez renseigner votre email et votre mot de passe.")

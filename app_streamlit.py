@@ -32,7 +32,72 @@ st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
 # Une seule fois, avant toute figure matplotlib créée par les pages/composants.
 apply_mpl_theme()
 
-login.require_login()
+# login.require_login()
+# login.render_user_badge()
+
+# pages = [
+#     st.Page(
+#         "src/piezo_app/app_pages/analyse.py",
+#         title="Analyse & Prévision",
+#         icon="💧",
+#         default=True,
+#     ),
+# ]
+
+# if permissions.can_administer_users(st.session_state.user):
+#     pages.append(
+#         st.Page(
+#             "src/piezo_app/app_pages/admin.py",
+#             title="Administration des comptes",
+#             icon="🔧",
+#         )
+#     )
+
+# nav = st.navigation(pages)
+# nav.run()
+
+# ---------------------------------------------------------
+# État de connexion
+# ---------------------------------------------------------
+
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+
+# =========================================================
+# UTILISATEUR NON CONNECTÉ
+# =========================================================
+
+if st.session_state.user is None:
+
+    pages = [
+        st.Page(
+            login.require_login,
+            title="Connexion",
+            icon="🔐",
+            default=True,
+        ),
+        st.Page(
+            "src/piezo_app/app_pages/inscription.py",
+            title="Créer un compte",
+            icon="📝",
+        ),
+    ]
+
+    nav = st.navigation(
+        pages,
+        position="sidebar",
+    )
+
+    nav.run()
+
+    st.stop()
+
+
+# =========================================================
+# UTILISATEUR CONNECTÉ
+# =========================================================
+
 login.render_user_badge()
 
 pages = [
@@ -44,7 +109,13 @@ pages = [
     ),
 ]
 
-if permissions.can_administer_users(st.session_state.user):
+# ---------------------------------------------------------
+# Administration
+# ---------------------------------------------------------
+
+if permissions.can_administer_users(
+    st.session_state.user
+):
     pages.append(
         st.Page(
             "src/piezo_app/app_pages/admin.py",
@@ -53,5 +124,7 @@ if permissions.can_administer_users(st.session_state.user):
         )
     )
 
+
 nav = st.navigation(pages)
+
 nav.run()
