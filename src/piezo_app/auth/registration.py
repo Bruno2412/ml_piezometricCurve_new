@@ -28,6 +28,9 @@ def register_user(
     Le rôle est toujours USER.
     Un utilisateur ne peut jamais choisir son rôle.
     Le compte est créé désactivé.
+
+    Les droits d'accès aux pages sont initialisés à False.
+    Ils devront être attribués explicitement par un administrateur.
     """
 
     email = email.strip().lower()
@@ -72,10 +75,17 @@ def register_user(
         #
         # Une inscription publique crée TOUJOURS un user.
         #
+        # Sécurité stricte :
+        # aucun accès aux fonctionnalités métier par défaut.
+        #
         claims = {
             "role": permissions.USER,
             "company_id": company_id,
             "company_name": company_name,
+            "pages": {
+                key: False
+                for key in permissions.PAGE_KEYS
+            },
         }
 
         fb_auth.set_custom_user_claims(

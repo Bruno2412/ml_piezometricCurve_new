@@ -48,6 +48,7 @@ def render():
     _render_per_company_table(all_users, companies)
     st.divider()
     _render_filterable_accounts(user, all_users, companies)
+    _render_page_permissions(user, all_users)
 
 
 def _render_summary(all_users, companies):
@@ -134,3 +135,67 @@ def _render_filterable_accounts(user, all_users, companies):
                     st.rerun()
                 except PermissionError as e:
                     st.error(str(e))
+
+def _render_page_permissions(user, all_users):
+    st.divider()
+    st.subheader("Gestion des accès aux pages")
+
+    editable_users = [
+        u
+        for u in all_users
+        if permissions.can_modify_target(user, u)
+    ]
+
+    if not editable_users:
+        st.info("Aucun compte ne peut être modifié.")
+        return
+
+    user_labels = {
+        u["uid"]: f"{u['email']} — {u['company_name'] or 'Sans société'}"
+        for u in editable_users
+    }
+
+    selected_uid = st.selectbox(
+        "Utilisateur",
+        options=list(user_labels.keys()),
+        format_func=lambda uid: user_labels[uid],
+    )
+
+    target = next(
+        u for u in editable_users
+        if u["uid"] == selected_uid
+    )
+
+    current_pages = permissions.allowed_pages(target)
+
+    st.markdown("**Pages accessibles**")
+
+    selected_pages = {}
+
+    for page_key in permissions.PAGE_KEYS:
+        selected_pages[page_key] = st.checkbox(
+            permissions.PAGE_LABELS[page_key],
+            value=page_key in current_pages,
+            key=f"page_permission_{target['uid']}_{page_key}",
+        )
+
+    if st.button(
+        "Enregistrer les permissions",
+        type="primary",
+        key=f"save_page_permissions_{target['uid']}",
+    ):
+        try:
+            authentication.set_user_pages(
+                user,
+                target,
+                selected_pages,
+            )
+
+            st.success(
+                f"Les permissions de {target['email']} ont été enregistrées."
+            )
+
+            st.rerun()
+
+        except PermissionError as e:
+            st.error(str(e))

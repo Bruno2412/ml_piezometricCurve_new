@@ -15,6 +15,19 @@ from piezo_app.data.data_loader import load_chroniques_auto, load_descriptif, lo
 
 st.title("Piézométrie - Digital Twin - ...")
 
+# ---------------------------------------------------------
+# Permissions de l'utilisateur
+# ---------------------------------------------------------
+allowed = permissions.allowed_pages(st.session_state.user)
+
+if not allowed:
+    st.warning(
+        "Aucune fonctionnalité ne vous est actuellement accessible. "
+        "Contactez votre administrateur pour demander l'attribution "
+        "de vos droits."
+    )
+    st.stop()
+
 # ── Barre latérale (Paramètres) ──────────────────────────────────────────
 with st.sidebar:
     st.header("Chroniques (3 points — même masse d'eau)")
@@ -163,7 +176,7 @@ if chroniques_file is not None or excel_file is not None:
                 # tab_reseau.render()/tab_analyse.render()/etc. ne sont
                 # jamais appelées pour un onglet refusé, ce n'est donc pas
                 # qu'une question d'affichage.
-                allowed = permissions.allowed_pages(st.session_state.user)
+                #allowed = permissions.allowed_pages(st.session_state.user)
 
                 tab_specs = [
                     spec

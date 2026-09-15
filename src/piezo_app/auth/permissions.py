@@ -128,27 +128,62 @@ PAGE_LABELS = {
 
 
 def allowed_pages(user: dict) -> set:
-    """Ensemble des clés d'onglets auxquels `user` a droit.
+    """
+    Retourne les pages auxquelles l'utilisateur a accès.
 
-    Absence de la clé "pages" dans les custom claims (compte créé
-    avant l'introduction de cette fonctionnalité, ou jamais configuré)
-    = tout autorisé, pour ne rien casser pour les comptes existants.
-    Dès qu'un admin enregistre une configuration via
-    auth.authentication.set_user_pages, seules les clés explicitement
-    cochées sont autorisées.
+    Règles :
+    - un global_master possède toujours tous les accès ;
+    - pour les autres rôles, l'absence de claim 'pages' signifie
+      aucun accès ;
+    - l'absence d'une clé dans 'pages' signifie aucun accès à cette page ;
+    - le Digital Twin nécessite obligatoirement l'accès à l'Analyse.
+    """
 
-    "twin" est filtré si "analyse" ne l'est pas (dépendance technique,
-    voir plus haut)."""
-    raw = user.get("pages")
-    if raw is None:
-        allowed = set(PAGE_KEYS)
-    else:
-        allowed = {key for key in PAGE_KEYS if raw.get(key, False)}
+    # ---------------------------------------------------------
+    # Exception : global_master
+    # ---------------------------------------------------------
+    if is_global_master(user):
+        return set(PAGE_KEYS)
 
+    # ---------------------------------------------------------
+    # Autres rôles : sécurité stricte
+    # ---------------------------------------------------------
+    raw = user.get("pages") or {}
+
+    allowed = {
+        key
+        for key in PAGE_KEYS
+        if raw.get(key, False)
+    }
+
+    # Le Digital Twin dépend de l'Analyse & Prévision.
     if "twin" in allowed and "analyse" not in allowed:
         allowed.discard("twin")
 
     return allowed
+
+# def allowed_pages(user: dict) -> set:
+#     """Ensemble des clés d'onglets auxquels `user` a droit.
+
+#     Absence de la clé "pages" dans les custom claims (compte créé
+#     avant l'introduction de cette fonctionnalité, ou jamais configuré)
+#     = tout autorisé, pour ne rien casser pour les comptes existants.
+#     Dès qu'un admin enregistre une configuration via
+#     auth.authentication.set_user_pages, seules les clés explicitement
+#     cochées sont autorisées.
+
+#     "twin" est filtré si "analyse" ne l'est pas (dépendance technique,
+#     voir plus haut)."""
+#     raw = user.get("pages")
+#     if raw is None:
+#         allowed = set(PAGE_KEYS)
+#     else:
+#         allowed = {key for key in PAGE_KEYS if raw.get(key, False)}
+
+#     if "twin" in allowed and "analyse" not in allowed:
+#         allowed.discard("twin")
+
+#     return allowed
 
 
 def effective_company_id(user: dict, viewing_company_id: str | None) -> str | None:
