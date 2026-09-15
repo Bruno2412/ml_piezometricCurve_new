@@ -9,6 +9,7 @@ app_streamlit.py, avant l'introduction de la navigation multi-pages.
 import streamlit as st
 
 from piezo_app import piezo_core as core
+from piezo_app.auth import permissions
 from piezo_app.components import tab_analyse, tab_carte, tab_reseau, tab_twin
 from piezo_app.data.data_loader import load_chroniques_auto, load_descriptif, load_masses_eau
 
@@ -155,44 +156,69 @@ if chroniques_file is not None or excel_file is not None:
                 else:
                     st.sidebar.warning("Masse d'eau non renseignée — à vérifier")
 
-                # 5. Affichage des Onglets
-                tab1, tab2, tab3, tab4 = st.tabs(
-                    ["Réseau", "Analyse & Prévision", "Carte Piézométrique", "Digital Twin"]
-                )
+                # 5. Affichage des Onglets — un utilisateur ne voit que les
+                # onglets que son compte autorise (auth.permissions.
+                # allowed_pages). Contrairement à un masquage côté client,
+                # les onglets non autorisés ne sont ici même pas construits :
+                # tab_reseau.render()/tab_analyse.render()/etc. ne sont
+                # jamais appelées pour un onglet refusé, ce n'est donc pas
+                # qu'une question d'affichage.
+                allowed = permissions.allowed_pages(st.session_state.user)
 
-                with tab1:
-                    tab_reseau.render(chronicles)
-                with tab2:
-                    freq = tab_analyse.render(
-                        chronicles=chronicles,
-                        selection=selection,
-                        target_name=target_name,
-                        model_name=model_name,
-                        future_years=future_years,
-                        validation_years=validation_years,
-                        ci_pct=ci_pct,
-                        n_bootstraps=n_bootstraps,
+                tab_specs = [
+                    spec
+                    for spec in (
+                        ("reseau", "Réseau"),
+                        ("analyse", "Analyse & Prévision"),
+                        ("carte", "Carte Piézométrique"),
+                        ("twin", "Digital Twin"),
                     )
-                with tab3:
-                    tab_carte.render(
-                        selection=selection,
-                        chronicles=chronicles,
-                        coords_dict=coords_dict,
+                    if spec[0] in allowed
+                ]
+
+                if not tab_specs:
+                    st.warning(
+                        "Aucun onglet ne vous est accessible. "
+                        "Contactez votre administrateur."
                     )
-                with tab4:
-                    tab_twin.render(
-                        chronicles=chronicles,
-                        selection=selection,
-                        target_name=target_name,
-                        freq=freq,
-                        ok=ok,
-                        Q=Q,
-                        S=S,
-                        K=K,
-                        thickness=thickness,
-                        distance=distance,
-                        Area=Area,
-                    )
+                else:
+                    freq = None
+                    tabs = st.tabs([label for _, label in tab_specs])
+                    for (key, _label), tab in zip(tab_specs, tabs):
+                        with tab:
+                            if key == "reseau":
+                                tab_reseau.render(chronicles)
+                            elif key == "analyse":
+                                freq = tab_analyse.render(
+                                    chronicles=chronicles,
+                                    selection=selection,
+                                    target_name=target_name,
+                                    model_name=model_name,
+                                    future_years=future_years,
+                                    validation_years=validation_years,
+                                    ci_pct=ci_pct,
+                                    n_bootstraps=n_bootstraps,
+                                )
+                            elif key == "carte":
+                                tab_carte.render(
+                                    selection=selection,
+                                    chronicles=chronicles,
+                                    coords_dict=coords_dict,
+                                )
+                            elif key == "twin":
+                                tab_twin.render(
+                                    chronicles=chronicles,
+                                    selection=selection,
+                                    target_name=target_name,
+                                    freq=freq,
+                                    ok=ok,
+                                    Q=Q,
+                                    S=S,
+                                    K=K,
+                                    thickness=thickness,
+                                    distance=distance,
+                                    Area=Area,
+                                )
 
 else:
     st.info(

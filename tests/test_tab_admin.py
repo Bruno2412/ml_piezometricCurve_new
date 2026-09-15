@@ -55,11 +55,13 @@ class TestRenderDoesNotExposeProtectedAccounts:
             mock.patch.object(tab_admin.authentication, "list_users", return_value=visible),
             mock.patch.object(tab_admin.authentication, "set_user_active") as mocked_toggle,
             mock.patch("streamlit.button", return_value=True),  # simule un clic partout
-            mock.patch("streamlit.columns", return_value=[mock.MagicMock() for _ in range(4)]),
+            mock.patch("streamlit.columns", return_value=[mock.MagicMock() for _ in range(5)]),
             mock.patch("streamlit.form"),
             mock.patch("streamlit.form_submit_button", return_value=False),
             mock.patch("streamlit.text_input", return_value=""),
             mock.patch("streamlit.selectbox", return_value="user"),
+            mock.patch("streamlit.checkbox", return_value=False),
+            mock.patch("streamlit.caption"),
             mock.patch("streamlit.rerun"),
         ):
             tab_admin.render()
@@ -70,4 +72,43 @@ class TestRenderDoesNotExposeProtectedAccounts:
         assert called_targets == ["u-1"]
         for call in mocked_toggle.call_args_list:
             assert permissions.can_modify_target(actor, call.args[1])
+
+
+class TestPagePermissionsForm:
+    def test_only_calls_set_user_pages_for_authorized_target(self):
+        actor = {
+            "uid": "gm-1",
+            "role": "global_master",
+            "company_id": None,
+            "company_name": None,
+        }
+        visible = [
+            _user_row("gm-1", "global_master", None),  # lui-même : pas de popover
+            _user_row("u-1", "user", "acme"),  # cas normal
+        ]
+
+        st.session_state.clear()
+        st.session_state.user = actor
+
+        with (
+            mock.patch.object(tab_admin.authentication, "list_users", return_value=visible),
+            mock.patch.object(tab_admin.authentication, "set_user_active"),
+            mock.patch.object(tab_admin.authentication, "set_user_pages") as mocked_pages,
+            mock.patch("streamlit.button", return_value=False),
+            mock.patch("streamlit.columns", return_value=[mock.MagicMock() for _ in range(5)]),
+            mock.patch("streamlit.form"),
+            mock.patch("streamlit.form_submit_button", return_value=True),  # simule "Enregistrer"
+            mock.patch("streamlit.text_input", return_value=""),
+            mock.patch("streamlit.selectbox", return_value="user"),
+            mock.patch("streamlit.checkbox", return_value=True),
+            mock.patch("streamlit.caption"),
+            mock.patch("streamlit.rerun"),
+        ):
+            tab_admin.render()
+
+        # Le popover n'est même pas construit sur son propre compte
+        # (permissions.can_modify_target renvoie False) : un seul appel,
+        # pour u-1.
+        called_targets = [call.args[1]["uid"] for call in mocked_pages.call_args_list]
+        assert called_targets == ["u-1"]
 

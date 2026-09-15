@@ -122,6 +122,7 @@ def authenticate(email: str, password: str) -> dict | None:
         "role": role,
         "company_id": claims.get("company_id"),
         "company_name": claims.get("company_name"),
+        "pages": claims.get("pages"),
         # Le token est conservé en session pour les vérifications
         # ultérieures.
         "id_token": id_token,
@@ -194,6 +195,7 @@ def list_users(current_user: dict):
                 "company_id": claims.get("company_id"),
                 "company_name": claims.get("company_name"),
                 "disabled": u.disabled,
+                "pages": claims.get("pages"),
             }
         )
     return result
@@ -213,6 +215,29 @@ def set_user_active(current_user, target: dict, is_active: bool):
     if not permissions.can_modify_target(current_user, target):
         raise PermissionError("Droits insuffisants pour modifier ce compte.")
     fb_auth.update_user(target["uid"], disabled=not is_active)
+
+
+def set_user_pages(current_user, target: dict, pages: dict):
+    """Définit les onglets auxquels `target` a droit (voir
+    auth.permissions.PAGE_KEYS pour la liste). `pages` est un dict
+    {clé: bool} ; toute clé de PAGE_KEYS absente de `pages` est traitée
+    comme False (accès retiré).
+
+    Mêmes droits que pour activer/désactiver un compte
+    (auth.permissions.can_modify_target) : on ne peut pas modifier ses
+    propres permissions par ce chemin, ni celles d'un global_master, et
+    un company_master reste cantonné à sa société.
+
+    Les autres custom claims du compte (role, company_id, ...) sont
+    préservés : on relit d'abord les claims existantes plutôt que de
+    les remplacer entièrement, pour ne pas perdre le rôle ou la société
+    de l'utilisateur au passage."""
+    if not permissions.can_modify_target(current_user, target):
+        raise PermissionError("Droits insuffisants pour modifier les pages de ce compte.")
+
+    existing_claims = fb_auth.get_user(target["uid"]).custom_claims or {}
+    existing_claims["pages"] = {key: bool(pages.get(key, False)) for key in permissions.PAGE_KEYS}
+    fb_auth.set_custom_user_claims(target["uid"], existing_claims)
 
 
 def list_companies():

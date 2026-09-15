@@ -35,10 +35,10 @@ def _fake_response(status_code=200, json_data=None):
     return resp
 
 
-def _fake_user_record(uid="uid-123", email="user@example.com", disabled=False):
+def _fake_user_record(uid="uid-123", email="user@example.com", disabled=False, custom_claims=None):
     """Imite un UserRecord Firebase Admin (seuls les attributs utilisés
     par authentication.py sont présents)."""
-    return SimpleNamespace(uid=uid, email=email, disabled=disabled)
+    return SimpleNamespace(uid=uid, email=email, disabled=disabled, custom_claims=custom_claims)
 
 
 SIGNIN_SUCCESS_BODY = {
@@ -204,6 +204,7 @@ class TestAuthenticate:
             "role": "company_master",
             "company_id": "acme",
             "company_name": "ACME Corp",
+            "pages": None,
             "id_token": "fake-id-token",
             "refresh_token": "fake-refresh-token",
             "expires_in": "3600",
@@ -461,3 +462,68 @@ class TestSetUserActive:
             with pytest.raises(PermissionError):
                 authentication.set_user_active(actor, actor, is_active=False)
         mocked.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# set_user_pages()
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestSetUserPages:
+    def test_global_master_sets_pages_for_a_user(self):
+        target = {"uid": "uid-1", "role": "user", "company_id": "acme"}
+        with (
+            mock.patch.object(
+                authentication.fb_auth,
+                "get_user",
+                return_value=_fake_user_record(custom_claims={"role": "user", "company_id": "acme"}),
+            ),
+            mock.patch.object(authentication.fb_auth, "set_custom_user_claims") as mocked_set,
+        ):
+            authentication.set_user_pages(
+                _global_master(), target, {"reseau": True, "analyse": True}
+            )
+
+        mocked_set.assert_called_once_with(
+            "uid-1",
+            {
+                "role": "user",
+                "company_id": "acme",
+                "pages": {"reseau": True, "analyse": True, "carte": False, "twin": False},
+            },
+        )
+
+    def test_company_master_cannot_set_pages_for_another_company(self):
+        actor = _company_master(company_id="acme")
+        target = {"uid": "uid-1", "role": "user", "company_id": "other-company"}
+        with (
+            mock.patch.object(authentication.fb_auth, "get_user") as mocked_get,
+            mock.patch.object(authentication.fb_auth, "set_custom_user_claims") as mocked_set,
+        ):
+            with pytest.raises(PermissionError):
+                authentication.set_user_pages(actor, target, {"reseau": True})
+        mocked_get.assert_not_called()
+        mocked_set.assert_not_called()
+
+    def test_nobody_can_set_pages_of_a_global_master(self):
+        actor = _global_master(uid="gm-1")
+        target = _global_master(uid="gm-2")
+        with (
+            mock.patch.object(authentication.fb_auth, "get_user") as mocked_get,
+            mock.patch.object(authentication.fb_auth, "set_custom_user_claims") as mocked_set,
+        ):
+            with pytest.raises(PermissionError):
+                authentication.set_user_pages(actor, target, {"reseau": True})
+        mocked_get.assert_not_called()
+        mocked_set.assert_not_called()
+
+    def test_cannot_set_own_pages(self):
+        actor = _company_master(company_id="acme", uid="cm-1")
+        with (
+            mock.patch.object(authentication.fb_auth, "get_user") as mocked_get,
+            mock.patch.object(authentication.fb_auth, "set_custom_user_claims") as mocked_set,
+        ):
+            with pytest.raises(PermissionError):
+                authentication.set_user_pages(actor, actor, {"reseau": True})
+        mocked_get.assert_not_called()
+        mocked_set.assert_not_called()

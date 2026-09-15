@@ -83,9 +83,9 @@ def can_create_user_for(actor: dict, target_role: str, target_company_id: str | 
 
 def can_modify_target(actor: dict, target: dict) -> bool:
     """Décide si `actor` a le droit d'agir sur CE compte précis
-    (désactiver/réactiver, éditer). Centralise les garde-fous
-    anti-escalade qui ne peuvent pas être déduits du rôle de l'acteur
-    seul :
+    (désactiver/réactiver, éditer, modifier ses permissions de pages).
+    Centralise les garde-fous anti-escalade qui ne peuvent pas être
+    déduits du rôle de l'acteur seul :
       - un compte ne peut pas être modifié par son propre titulaire par
         ce chemin (pas d'auto-désactivation depuis l'admin) ;
       - un global_master ne peut être modifié par personne, pas même un
@@ -102,6 +102,53 @@ def can_modify_target(actor: dict, target: dict) -> bool:
     if is_company_master(actor) and target["company_id"] != actor["company_id"]:
         return False
     return True
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Permissions par onglet (Réseau / Analyse / Carte / Digital Twin)
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Ce sont les 4 onglets internes de app_pages/analyse.py (st.tabs), pas
+# des pages de navigation séparées : il n'y a donc pas d'URL propre à
+# chacun. Le contrôle se fait au moment de construire la liste des
+# onglets à afficher — voir app_pages/analyse.py.
+#
+# "twin" (Digital Twin) réutilise le résultat de fréquence calculé par
+# l'onglet "analyse" : il n'a donc de sens que si "analyse" est aussi
+# autorisé (voir allowed_pages, qui applique cette dépendance).
+
+PAGE_KEYS = ("reseau", "analyse", "carte", "twin")
+
+PAGE_LABELS = {
+    "reseau": "Réseau",
+    "analyse": "Analyse & Prévision",
+    "carte": "Carte Piézométrique",
+    "twin": "Digital Twin",
+}
+
+
+def allowed_pages(user: dict) -> set:
+    """Ensemble des clés d'onglets auxquels `user` a droit.
+
+    Absence de la clé "pages" dans les custom claims (compte créé
+    avant l'introduction de cette fonctionnalité, ou jamais configuré)
+    = tout autorisé, pour ne rien casser pour les comptes existants.
+    Dès qu'un admin enregistre une configuration via
+    auth.authentication.set_user_pages, seules les clés explicitement
+    cochées sont autorisées.
+
+    "twin" est filtré si "analyse" ne l'est pas (dépendance technique,
+    voir plus haut)."""
+    raw = user.get("pages")
+    if raw is None:
+        allowed = set(PAGE_KEYS)
+    else:
+        allowed = {key for key in PAGE_KEYS if raw.get(key, False)}
+
+    if "twin" in allowed and "analyse" not in allowed:
+        allowed.discard("twin")
+
+    return allowed
 
 
 def effective_company_id(user: dict, viewing_company_id: str | None) -> str | None:
