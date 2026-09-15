@@ -53,14 +53,5 @@ if permissions.can_administer_users(st.session_state.user):
         )
     )
 
-if permissions.is_global_master(st.session_state.user):
-    pages.append(
-        st.Page(
-            "src/piezo_app/app_pages/global_overview.py",
-            title="Vue globale",
-            icon="🌍",
-        )
-    )
-
 nav = st.navigation(pages)
 nav.run()
