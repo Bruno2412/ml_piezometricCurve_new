@@ -1,24 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Sep 16 11:27:42 2026
-
-@author: bruno
+services/email_service.py — Envoi de l'email de confirmation d'inscription.
 """
 
 import smtplib
-import os
+import streamlit as st
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
-SMTP_USER = os.environ.get("SMTP_USER")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
 
 def send_verification_email(to_email: str, verify_link: str) -> bool:
+    smtp_config = st.secrets["smtp"]
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Confirmez votre inscription — Expert Piézométrie Pro"
-    msg["From"] = SMTP_USER
+    msg["From"] = smtp_config["user"]
     msg["To"] = to_email
 
     text = f"Bonjour,\n\nConfirmez votre inscription en cliquant sur ce lien :\n{verify_link}\n"
@@ -33,11 +29,48 @@ def send_verification_email(to_email: str, verify_link: str) -> bool:
     msg.attach(MIMEText(html, "html"))
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        with smtplib.SMTP(smtp_config["host"], smtp_config["port"]) as server:
             server.starttls()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, to_email, msg.as_string())
+            server.login(smtp_config["user"], smtp_config["password"])
+            server.sendmail(smtp_config["user"], to_email, msg.as_string())
         return True
     except Exception as e:
         print(f"Erreur envoi email: {e}")
+        return False
+    
+def send_admin_notification_email(admin_emails: list[str], new_user_email: str, company_name: str = "") -> bool:
+    smtp_config = st.secrets["smtp"]
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Nouvelle inscription à valider — Expert Piézométrie Pro"
+    msg["From"] = smtp_config["user"]
+    msg["To"] = ", ".join(admin_emails)
+
+    company_line = f" (société : {company_name})" if company_name else ""
+
+    text = (
+        f"Bonjour,\n\n"
+        f"L'utilisateur {new_user_email}{company_line} vient de confirmer "
+        f"son adresse email suite à son inscription.\n\n"
+        f"Son compte est en attente de validation. Rendez-vous dans "
+        f"l'administration des comptes pour l'activer.\n"
+    )
+    html = f"""
+    <p>Bonjour,</p>
+    <p>L'utilisateur <strong>{new_user_email}</strong>{company_line} vient de
+    confirmer son adresse email suite à son inscription.</p>
+    <p>Son compte est en attente de validation. Rendez-vous dans
+    l'administration des comptes pour l'activer.</p>
+    """
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP(smtp_config["host"], smtp_config["port"]) as server:
+            server.starttls()
+            server.login(smtp_config["user"], smtp_config["password"])
+            server.sendmail(smtp_config["user"], admin_emails, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"Erreur envoi email admin: {e}")
         return False

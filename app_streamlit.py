@@ -26,35 +26,34 @@ import streamlit as st
 from piezo_app.auth import permissions
 from piezo_app.components import login
 from piezo_app.components.mpl_theme import apply_mpl_theme
+from piezo_app.auth import registration
 
 st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
 
 # Une seule fois, avant toute figure matplotlib créée par les pages/composants.
 apply_mpl_theme()
 
-# login.require_login()
-# login.render_user_badge()
+# ---------------------------------------------------------
+# Retour du lien de confirmation d'email (Firebase redirige ici
+# après validation du oobCode, voir ActionCodeSettings dans
+# auth/registration.py). Interceptée avant toute logique de
+# connexion : l'utilisateur n'est pas encore connecté à ce stade,
+# son compte étant toujours désactivé en attente de validation
+# par un administrateur.
+# ---------------------------------------------------------
 
-# pages = [
-#     st.Page(
-#         "src/piezo_app/app_pages/analyse.py",
-#         title="Analyse & Prévision",
-#         icon="💧",
-#         default=True,
-#     ),
-# ]
-
-# if permissions.can_administer_users(st.session_state.user):
-#     pages.append(
-#         st.Page(
-#             "src/piezo_app/app_pages/admin.py",
-#             title="Administration des comptes",
-#             icon="🔧",
-#         )
-#     )
-
-# nav = st.navigation(pages)
-# nav.run()
+if st.query_params.get("action") == "email_verified":
+    st.title("Email confirmé ✅")
+    st.success("Votre adresse email a bien été validée.")
+    st.info(
+        "Votre compte est maintenant en attente d'activation par un "
+        "administrateur. Vous recevrez un accès dès que votre compte "
+        "aura été validé."
+    )
+    if st.button("Retour à la page de connexion"):
+        st.query_params.clear()
+        st.rerun()
+    st.stop()
 
 # ---------------------------------------------------------
 # État de connexion

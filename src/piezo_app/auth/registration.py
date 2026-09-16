@@ -1,4 +1,6 @@
 from firebase_admin import auth as fb_auth
+from firebase_admin.auth import ActionCodeSettings
+import streamlit as st
 
 from piezo_app.auth import permissions
 from piezo_app.services.email_service import send_verification_email
@@ -102,10 +104,56 @@ def register_user(
     # jusqu'à validation manuelle par un administrateur. On journalise
     # simplement l'échec pour investigation.
     #
+    # Le lien redirige ensuite l'utilisateur vers notre propre page
+    # (?action=email_verified) plutôt que vers la page générique
+    # Firebase, pour afficher un message adapté ("en attente de
+    # validation par un administrateur").
+    #
     try:
-        link = fb_auth.generate_email_verification_link(email)
+        app_url = st.secrets.get("app", {}).get("base_url", "http://localhost:8501")
+        action_code_settings = ActionCodeSettings(
+            url=f"{app_url}/?action=email_verified&email={quote(email)}",
+            handle_code_in_app=False,
+        )
+        link = fb_auth.generate_email_verification_link(email, action_code_settings)
         send_verification_email(email, link)
     except Exception as e:
         print(f"Échec d'envoi de l'email de confirmation pour {email} : {e}")
 
     return user_record.uid
+
+
+def notify_admins_of_email_confirmation(email: str) -> None:
+    """
+    Envoie une notification aux administrateurs (global_master) lorsque
+    l'email d'un utilisateur inscrit vient d'être confirmé.
+
+    Idempotent : un custom claim `admin_notified` est posé sur le compte
+    après le premier envoi, pour ne jamais notifier deux fois pour le
+    même compte (ex. si le lien est cliqué plusieurs fois).
+    """
+    try:
+        user_record = fb_auth.get_user_by_email(email)
+    except Exception:
+        return
+
+    claims = user_record.custom_claims or {}
+
+    if claims.get("admin_notified"):
+        return
+
+    admin_emails = [
+        u.email
+        for u in fb_auth.list_users().iterate_all()
+        if (u.custom_claims or {}).get("role") == permissions.GLOBAL_MASTER
+    ]
+
+    if admin_emails:
+        send_admin_notification_email(
+            admin_emails,
+            new_user_email=email,
+            company_name=claims.get("company_name", ""),
+        )
+
+    claims["admin_notified"] = True
+    fb_auth.set_custom_user_claims(user_record.uid, claims)
