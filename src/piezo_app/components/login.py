@@ -11,6 +11,7 @@ import streamlit as st
 from piezo_app.auth import authentication
 from piezo_app.auth.authentication import EmailNotVerifiedError, PendingApprovalError
 
+
 def require_login():
     """
     Bloque l'accès à l'application tant que l'utilisateur
@@ -57,7 +58,8 @@ def require_login():
         if not email or not password:
             st.error("Veuillez renseigner votre email et votre mot de passe.")
             st.stop()
-            
+
+        user = None
         with st.spinner("Authentification..."):
             try:
                 user = authentication.authenticate(
@@ -77,25 +79,11 @@ def require_login():
                 )
                 st.stop()
 
-    if user is None:
-        st.error(
-            "Connexion impossible. Vérifiez vos identifiants ou contactez votre administrateur."
-        )
-
-        st.stop()
-
-        # with st.spinner("Authentification..."):
-        #     user = authentication.authenticate(
-        #         email=email,
-        #         password=password,
-        #     )
-
-        # if user is None:
-        #     st.error(
-        #         "Connexion impossible. Vérifiez vos identifiants ou contactez votre administrateur."
-        #     )
-
-        #     st.stop()
+        if user is None:
+            st.error(
+                "Connexion impossible. Vérifiez vos identifiants ou contactez votre administrateur."
+            )
+            st.stop()
 
         # -----------------------------------------------------
         # SESSION UTILISATEUR

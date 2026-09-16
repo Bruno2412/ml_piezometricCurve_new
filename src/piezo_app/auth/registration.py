@@ -1,7 +1,7 @@
 from firebase_admin import auth as fb_auth
 
 from piezo_app.auth import permissions
-from services.email_service import send_verification_email
+from piezo_app.services.email_service import send_verification_email
 
 
 def register_user(

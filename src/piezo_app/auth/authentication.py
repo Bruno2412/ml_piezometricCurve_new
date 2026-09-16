@@ -15,7 +15,7 @@ import requests
 import streamlit as st
 from firebase_admin import auth as fb_auth
 from firebase_admin import credentials
-from services.email_service import send_verification_email
+from piezo_app.services.email_service import send_verification_email
 
 
 from piezo_app.auth import permissions
