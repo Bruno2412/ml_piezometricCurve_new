@@ -15,6 +15,8 @@ import requests
 import streamlit as st
 from firebase_admin import auth as fb_auth
 from firebase_admin import credentials
+from services.email_service import send_verification_email
+
 
 from piezo_app.auth import permissions
 
@@ -35,6 +37,15 @@ _SIGN_IN_URL = (
     f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={_API_KEY}"
 )
 
+class EmailNotVerifiedError(Exception):
+    """Le mot de passe est correct mais l'email n'a pas encore été confirmé."""
+    pass
+
+
+class PendingApprovalError(Exception):
+    """Le compte existe et l'email est confirmé, mais aucun rôle ne lui a
+    encore été attribué par un administrateur."""
+    pass
 
 def authenticate(email: str, password: str) -> dict | None:
     """
@@ -47,7 +58,9 @@ def authenticate(email: str, password: str) -> dict | None:
         4. Les custom claims sont récupérées depuis le token vérifié
         5. Le profil utilisateur est retourné
 
-    Retourne None si l'authentification échoue.
+    Retourne None si l'authentification échoue (email/mot de passe incorrects).
+    Lève EmailNotVerifiedError si l'email n'a pas encore été confirmé.
+    Lève PendingApprovalError si aucun rôle n'a encore été attribué au compte.
     """
 
     try:
@@ -104,6 +117,14 @@ def authenticate(email: str, password: str) -> dict | None:
         return None
 
     # ---------------------------------------------------------
+    # Blocage si l'email n'a pas été confirmé
+    # ---------------------------------------------------------
+    if not user_record.email_verified:
+        raise EmailNotVerifiedError(
+            "Compte non confirmé. Vérifiez votre boîte mail."
+        )
+
+    # ---------------------------------------------------------
     # Les custom claims viennent du token vérifié
     # ---------------------------------------------------------
     claims = decoded_token
@@ -111,7 +132,9 @@ def authenticate(email: str, password: str) -> dict | None:
     role = claims.get("role")
 
     if role is None:
-        return None
+        raise PendingApprovalError(
+            "Votre compte est en attente de validation par un administrateur."
+        )
 
     # ---------------------------------------------------------
     # Vérification de cohérence avec le compte Firebase
@@ -128,7 +151,102 @@ def authenticate(email: str, password: str) -> dict | None:
         "id_token": id_token,
         "refresh_token": data.get("refreshToken"),
         "expires_in": data.get("expiresIn"),
-    }
+}
+
+
+# def authenticate(email: str, password: str) -> dict | None:
+#     """
+#     Authentifie un utilisateur auprès de Firebase Authentication.
+
+#     Flux :
+#         1. Email + mot de passe envoyés à Firebase REST API
+#         2. Firebase retourne un ID token
+#         3. L'ID token est vérifié avec Firebase Admin SDK
+#         4. Les custom claims sont récupérées depuis le token vérifié
+#         5. Le profil utilisateur est retourné
+
+#     Retourne None si l'authentification échoue.
+#     """
+
+#     try:
+#         resp = requests.post(
+#             _SIGN_IN_URL,
+#             json={
+#                 "email": email.strip(),
+#                 "password": password,
+#                 "returnSecureToken": True,
+#             },
+#             timeout=10,
+#         )
+
+#     except requests.RequestException:
+#         return None
+
+#     # Authentification Firebase échouée
+#     if resp.status_code != 200:
+#         return None
+
+#     try:
+#         data = resp.json()
+
+#         id_token = data["idToken"]
+#         uid = data["localId"]
+
+#     except (ValueError, KeyError):
+#         return None
+
+#     # ---------------------------------------------------------
+#     # Vérification cryptographique du token Firebase
+#     # ---------------------------------------------------------
+#     try:
+#         decoded_token = fb_auth.verify_id_token(id_token)
+
+#     except Exception:
+#         return None
+
+#     # Sécurité supplémentaire :
+#     # le UID du token doit correspondre au UID retourné par
+#     # l'API de connexion.
+#     if decoded_token.get("uid") != uid:
+#         return None
+
+#     # ---------------------------------------------------------
+#     # Récupération du compte Firebase
+#     # ---------------------------------------------------------
+#     try:
+#         user_record = fb_auth.get_user(uid)
+#     except Exception:
+#         return None
+
+#     if user_record.disabled:
+#         return None
+
+#     # ---------------------------------------------------------
+#     # Les custom claims viennent du token vérifié
+#     # ---------------------------------------------------------
+#     claims = decoded_token
+
+#     role = claims.get("role")
+
+#     if role is None:
+#         return None
+
+#     # ---------------------------------------------------------
+#     # Vérification de cohérence avec le compte Firebase
+#     # ---------------------------------------------------------
+#     return {
+#         "uid": uid,
+#         "email": user_record.email,
+#         "role": role,
+#         "company_id": claims.get("company_id"),
+#         "company_name": claims.get("company_name"),
+#         "pages": claims.get("pages"),
+#         # Le token est conservé en session pour les vérifications
+#         # ultérieures.
+#         "id_token": id_token,
+#         "refresh_token": data.get("refreshToken"),
+#         "expires_in": data.get("expiresIn"),
+#     }
 
 
 def create_user(current_user, email, password, role, company_id=None, company_name=None):
@@ -278,3 +396,4 @@ def list_companies():
         companies.values(),
         key=lambda company: company["company_name"].lower(),
     )
+

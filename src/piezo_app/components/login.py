@@ -9,7 +9,7 @@ Le module ne contient aucune logique métier.
 import streamlit as st
 
 from piezo_app.auth import authentication
-
+from piezo_app.auth.authentication import EmailNotVerifiedError, PendingApprovalError
 
 def require_login():
     """
@@ -57,19 +57,45 @@ def require_login():
         if not email or not password:
             st.error("Veuillez renseigner votre email et votre mot de passe.")
             st.stop()
-
+            
         with st.spinner("Authentification..."):
-            user = authentication.authenticate(
-                email=email,
-                password=password,
-            )
+            try:
+                user = authentication.authenticate(
+                    email=email,
+                    password=password,
+                )
+            except EmailNotVerifiedError:
+                st.warning(
+                    "Compte non confirmé. Vérifiez votre boîte mail (et vos spams) "
+                    "pour valider votre inscription."
+                )
+                st.stop()
+            except PendingApprovalError:
+                st.info(
+                    "Votre compte a été créé mais n'est pas encore activé. "
+                    "Contactez votre administrateur pour obtenir vos accès."
+                )
+                st.stop()
 
-        if user is None:
-            st.error(
-                "Connexion impossible. Vérifiez vos identifiants ou contactez votre administrateur."
-            )
+    if user is None:
+        st.error(
+            "Connexion impossible. Vérifiez vos identifiants ou contactez votre administrateur."
+        )
 
-            st.stop()
+        st.stop()
+
+        # with st.spinner("Authentification..."):
+        #     user = authentication.authenticate(
+        #         email=email,
+        #         password=password,
+        #     )
+
+        # if user is None:
+        #     st.error(
+        #         "Connexion impossible. Vérifiez vos identifiants ou contactez votre administrateur."
+        #     )
+
+        #     st.stop()
 
         # -----------------------------------------------------
         # SESSION UTILISATEUR
