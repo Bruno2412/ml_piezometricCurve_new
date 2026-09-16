@@ -1,19 +1,7 @@
-# -*- coding: utf-8 -*-
-"""
-auth/registration.py — Inscription publique des utilisateurs.
-
-Une inscription publique :
-- crée uniquement un compte 'user' ;
-- rattache le compte à une société ;
-- crée le compte Firebase désactivé ;
-- attribue les custom claims nécessaires.
-
-L'activation est ensuite réalisée par un administrateur.
-"""
-
 from firebase_admin import auth as fb_auth
 
 from piezo_app.auth import permissions
+from services.email_service import send_verification_email
 
 
 def register_user(
@@ -27,7 +15,8 @@ def register_user(
 
     Le rôle est toujours USER.
     Un utilisateur ne peut jamais choisir son rôle.
-    Le compte est créé désactivé.
+    Le compte est créé désactivé (email non vérifié en plus, à titre
+    informatif pour l'administrateur qui validera le compte).
 
     Les droits d'accès aux pages sont initialisés à False.
     Ils devront être attribués explicitement par un administrateur.
@@ -66,6 +55,7 @@ def register_user(
         email=email,
         password=password,
         disabled=True,
+        email_verified=False,
     )
 
     try:
@@ -102,5 +92,20 @@ def register_user(
             pass
 
         raise
+
+    # ---------------------------------------------------------
+    # Envoi de l'email de confirmation
+    # ---------------------------------------------------------
+    #
+    # Best-effort : un échec d'envoi ne doit pas empêcher la création
+    # du compte, qui reste de toute façon bloqué (disabled=True)
+    # jusqu'à validation manuelle par un administrateur. On journalise
+    # simplement l'échec pour investigation.
+    #
+    try:
+        link = fb_auth.generate_email_verification_link(email)
+        send_verification_email(email, link)
+    except Exception as e:
+        print(f"Échec d'envoi de l'email de confirmation pour {email} : {e}")
 
     return user_record.uid
