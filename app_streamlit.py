@@ -43,6 +43,14 @@ apply_mpl_theme()
 # ---------------------------------------------------------
 
 if st.query_params.get("action") == "email_verified":
+    email = st.query_params.get("email")
+
+    if email:
+        try:
+            registration.notify_admins_of_email_confirmation(email)
+        except Exception as e:
+            print(f"Échec de notification admin pour {email} : {e}")
+
     st.title("Email confirmé ✅")
     st.success("Votre adresse email a bien été validée.")
     st.info(

@@ -1,9 +1,14 @@
+from urllib.parse import quote
+
 from firebase_admin import auth as fb_auth
 from firebase_admin.auth import ActionCodeSettings
 import streamlit as st
 
 from piezo_app.auth import permissions
-from piezo_app.services.email_service import send_verification_email
+from piezo_app.services.email_service import (
+    send_verification_email,
+    send_admin_notification_email,
+)
 
 
 def register_user(
