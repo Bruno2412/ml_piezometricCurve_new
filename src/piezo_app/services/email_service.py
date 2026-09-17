@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-services/email_service.py — Envoi de l'email de confirmation d'inscription.
+services/email_service.py — Emails du parcours d'inscription/activation.
 """
 
 import smtplib
@@ -39,9 +39,7 @@ def send_verification_email(to_email: str, verify_link: str) -> bool:
         return False
 
 
-def send_admin_notification_email(
-    admin_emails: list[str], new_user_email: str, company_name: str = ""
-) -> bool:
+def send_admin_notification_email(admin_emails: list[str], new_user_email: str, company_name: str = "") -> bool:
     smtp_config = st.secrets["smtp"]
 
     msg = MIMEMultipart("alternative")
@@ -76,4 +74,50 @@ def send_admin_notification_email(
         return True
     except Exception as e:
         print(f"Erreur envoi email admin: {e}")
+        return False
+
+
+def send_account_activation_email(to_email: str, pages: dict) -> bool:
+    """
+    Confirme à l'utilisateur que son compte vient d'être activé par un
+    administrateur, avec la liste des pages auxquelles il a désormais
+    accès.
+    """
+    smtp_config = st.secrets["smtp"]
+
+    active_pages = [key for key, allowed in (pages or {}).items() if allowed]
+    pages_list_html = "".join(f"<li>{p}</li>" for p in active_pages) or "<li>(aucune page activée)</li>"
+    pages_list_text = ", ".join(active_pages) or "(aucune page activée)"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Votre compte a été activé — Expert Piézométrie Pro"
+    msg["From"] = smtp_config["user"]
+    msg["To"] = to_email
+
+    text = (
+        f"Bonjour,\n\n"
+        f"Votre compte Expert Piézométrie Pro vient d'être activé par un "
+        f"administrateur.\n\n"
+        f"Pages accessibles : {pages_list_text}\n\n"
+        f"Vous pouvez dès à présent vous connecter.\n"
+    )
+    html = f"""
+    <p>Bonjour,</p>
+    <p>Votre compte <strong>Expert Piézométrie Pro</strong> vient d'être
+    activé par un administrateur.</p>
+    <p>Pages accessibles :</p>
+    <ul>{pages_list_html}</ul>
+    <p>Vous pouvez dès à présent vous connecter.</p>
+    """
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP(smtp_config["host"], smtp_config["port"]) as server:
+            server.starttls()
+            server.login(smtp_config["user"], smtp_config["password"])
+            server.sendmail(smtp_config["user"], to_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"Erreur envoi email d'activation: {e}")
         return False

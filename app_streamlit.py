@@ -3,65 +3,85 @@
 Expert Piézométrie Pro — Digital Twin — point d'entrée de l'application.
 
 Ne fait que deux choses : la connexion, puis la navigation entre pages.
-Le contenu de chaque page vit dans src/piezo_app/app_pages/ :
-  - app_pages/analyse.py : l'application elle-même (tous les rôles)
-  - app_pages/admin.py   : gestion des comptes (global_master /
-    company_master uniquement — absente de la navigation pour un
-    "user" standard, pas seulement inaccessible)
-
-Le code applicatif vit sous src/piezo_app/ (layout src/). La ligne
-sys.path ci-dessous rend le package piezo_app importable sans
-nécessiter d'installation préalable (`pip install -e .`) : elle
-suffit pour `streamlit run app_streamlit.py` en local comme en
-déploiement (Streamlit Community Cloud, etc.).
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(
+    0,
+    str(
+        Path(__file__).parent / "src"
+    ),
+)
 
+import requests
 import streamlit as st
 
 from piezo_app.auth import permissions
+from piezo_app.auth import registration
 from piezo_app.components import login
 from piezo_app.components.mpl_theme import apply_mpl_theme
-from piezo_app.auth import registration
 
-st.set_page_config(page_title="Expert Piézométrie Pro", layout="wide")
 
-# Une seule fois, avant toute figure matplotlib créée par les pages/composants.
+st.set_page_config(
+    page_title="Expert Piézométrie Pro",
+    layout="wide",
+)
+
+
+# ---------------------------------------------------------
+# Thème Matplotlib
+# ---------------------------------------------------------
+
 apply_mpl_theme()
+
 
 # ---------------------------------------------------------
 # Retour du lien de confirmation d'email (Firebase redirige ici
-# après validation du oobCode, voir ActionCodeSettings dans
-# auth/registration.py). Interceptée avant toute logique de
-# connexion : l'utilisateur n'est pas encore connecté à ce stade,
-# son compte étant toujours désactivé en attente de validation
-# par un administrateur.
+# après clic sur "Confirmer mon email", voir ActionCodeSettings
+# dans auth/registration.py avec handle_code_in_app=True). La
+# validation réelle (oobCode) n'est déclenchée qu'au clic sur le
+# bouton ci-dessous, jamais au simple chargement de cette page —
+# ce qui évite qu'un pré-scan de sécurité côté messagerie (ex.
+# Outlook Safe Links) ne consomme le lien avant l'utilisateur.
 # ---------------------------------------------------------
 
-if st.query_params.get("action") == "email_verified":
+if st.query_params.get("action") == "email_verified" and st.query_params.get("oobCode"):
     email = st.query_params.get("email")
+    oob_code = st.query_params.get("oobCode")
 
-    if email:
-        try:
-            registration.notify_admins_of_email_confirmation(email)
-        except Exception as e:
-            print(f"Échec de notification admin pour {email} : {e}")
+    st.title("Confirmation de votre adresse email")
+    st.write(f"Cliquez sur le bouton ci-dessous pour confirmer l'adresse **{email}**.")
 
-    st.title("Email confirmé ✅")
-    st.success("Votre adresse email a bien été validée.")
-    st.info(
-        "Votre compte est maintenant en attente d'activation par un "
-        "administrateur. Vous recevrez un accès dès que votre compte "
-        "aura été validé."
-    )
-    if st.button("Retour à la page de connexion"):
-        st.query_params.clear()
-        st.rerun()
+    if st.button("Confirmer mon email", type="primary"):
+        api_key = st.secrets["firebase"]["api_key"]
+        resp = requests.post(
+            f"https://identitytoolkit.googleapis.com/v1/accounts:update?key={api_key}",
+            json={"oobCode": oob_code},
+            timeout=10,
+        )
+
+        if resp.status_code == 200:
+            st.success("Votre adresse email a bien été validée.")
+            st.info(
+                "Votre compte est maintenant en attente d'activation par un "
+                "administrateur. Vous recevrez un accès dès que votre compte "
+                "aura été validé."
+            )
+            if email:
+                try:
+                    registration.notify_admins_of_email_confirmation(email)
+                except Exception as e:
+                    print(f"Échec de notification admin pour {email} : {e}")
+        else:
+            st.error(
+                "Ce lien de confirmation est invalide ou a expiré. "
+                "Merci de contacter un administrateur ou de vous réinscrire."
+            )
+
     st.stop()
+
 
 # ---------------------------------------------------------
 # État de connexion
@@ -76,6 +96,7 @@ if "user" not in st.session_state:
 # =========================================================
 
 if st.session_state.user is None:
+
     pages = [
         st.Page(
             login.require_login,
@@ -106,6 +127,7 @@ if st.session_state.user is None:
 
 login.render_user_badge()
 
+
 pages = [
     st.Page(
         "src/piezo_app/app_pages/analyse.py",
@@ -115,11 +137,14 @@ pages = [
     ),
 ]
 
+
 # ---------------------------------------------------------
 # Administration
 # ---------------------------------------------------------
 
-if permissions.can_administer_users(st.session_state.user):
+if permissions.can_administer_users(
+    st.session_state.user
+):
     pages.append(
         st.Page(
             "src/piezo_app/app_pages/admin.py",
@@ -129,6 +154,8 @@ if permissions.can_administer_users(st.session_state.user):
     )
 
 
-nav = st.navigation(pages)
+nav = st.navigation(
+    pages
+)
 
 nav.run()
