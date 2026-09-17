@@ -10,19 +10,15 @@ from pathlib import Path
 
 sys.path.insert(
     0,
-    str(
-        Path(__file__).parent / "src"
-    ),
+    str(Path(__file__).parent / "src"),
 )
 
 import requests
 import streamlit as st
 
-from piezo_app.auth import permissions
-from piezo_app.auth import registration
+from piezo_app.auth import permissions, registration
 from piezo_app.components import login
 from piezo_app.components.mpl_theme import apply_mpl_theme
-
 
 st.set_page_config(
     page_title="Expert Piézométrie Pro",
@@ -96,7 +92,6 @@ if "user" not in st.session_state:
 # =========================================================
 
 if st.session_state.user is None:
-
     pages = [
         st.Page(
             login.require_login,
@@ -142,9 +137,7 @@ pages = [
 # Administration
 # ---------------------------------------------------------
 
-if permissions.can_administer_users(
-    st.session_state.user
-):
+if permissions.can_administer_users(st.session_state.user):
     pages.append(
         st.Page(
             "src/piezo_app/app_pages/admin.py",
@@ -154,8 +147,6 @@ if permissions.can_administer_users(
     )
 
 
-nav = st.navigation(
-    pages
-)
+nav = st.navigation(pages)
 
 nav.run()

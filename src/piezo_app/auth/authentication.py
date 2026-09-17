@@ -20,7 +20,6 @@ Le claim "approved" n'est plus utilisé pour bloquer la connexion.
 import firebase_admin
 import requests
 import streamlit as st
-
 from firebase_admin import auth as fb_auth
 from firebase_admin import credentials
 
@@ -35,17 +34,11 @@ def _init_firebase():
     if firebase_admin._apps:
         return firebase_admin.get_app()
 
-    cred_dict = dict(
-        st.secrets["firebase_service_account"]
-    )
+    cred_dict = dict(st.secrets["firebase_service_account"])
 
-    cred = credentials.Certificate(
-        cred_dict
-    )
+    cred = credentials.Certificate(cred_dict)
 
-    return firebase_admin.initialize_app(
-        cred
-    )
+    return firebase_admin.initialize_app(cred)
 
 
 _init_firebase()
@@ -54,8 +47,7 @@ _init_firebase()
 _API_KEY = st.secrets["firebase"]["api_key"]
 
 _SIGN_IN_URL = (
-    "https://identitytoolkit.googleapis.com/v1/"
-    f"accounts:signInWithPassword?key={_API_KEY}"
+    f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={_API_KEY}"
 )
 
 
@@ -132,9 +124,7 @@ def authenticate(
     # ---------------------------------------------------------
 
     try:
-        decoded_token = fb_auth.verify_id_token(
-            id_token
-        )
+        decoded_token = fb_auth.verify_id_token(id_token)
 
     except Exception:
         return None
@@ -147,9 +137,7 @@ def authenticate(
     # ---------------------------------------------------------
 
     try:
-        user_record = fb_auth.get_user(
-            uid
-        )
+        user_record = fb_auth.get_user(uid)
 
     except Exception:
         return None
@@ -160,8 +148,7 @@ def authenticate(
 
     if user_record.disabled:
         raise PendingApprovalError(
-            "Votre compte est en attente de validation "
-            "par un administrateur."
+            "Votre compte est en attente de validation par un administrateur."
         )
 
     # ---------------------------------------------------------
@@ -174,8 +161,7 @@ def authenticate(
 
     if role is None:
         raise PendingApprovalError(
-            "Votre compte est en attente de validation "
-            "par un administrateur."
+            "Votre compte est en attente de validation par un administrateur."
         )
 
     # ---------------------------------------------------------
@@ -207,13 +193,8 @@ def create_user(
     Crée un compte utilisateur depuis l'administration.
     """
 
-    if role == "company_master" and not permissions.can_assign_company_master(
-        current_user
-    ):
-        raise PermissionError(
-            "Seul un global_master peut attribuer le rôle "
-            "company_master."
-        )
+    if role == "company_master" and not permissions.can_assign_company_master(current_user):
+        raise PermissionError("Seul un global_master peut attribuer le rôle company_master.")
 
     if not permissions.can_create_user_for(
         current_user,
@@ -222,27 +203,21 @@ def create_user(
     ):
         raise PermissionError(
             f"Le rôle '{current_user['role']}' ne peut pas créer "
-            f"un compte '{role}'"
-            + (
-                f" pour la société '{company_id}'."
-                if company_id
-                else "."
-            )
+            f"un compte '{role}'" + (f" pour la société '{company_id}'." if company_id else ".")
         )
 
     if role == "global_master" and company_id is not None:
-        raise ValueError(
-            "Un global_master ne doit pas être rattaché "
-            "à une société."
-        )
+        raise ValueError("Un global_master ne doit pas être rattaché à une société.")
 
-    if role in (
-        "company_master",
-        "user",
-    ) and company_id is None:
-        raise ValueError(
-            "company_id est obligatoire pour ce rôle."
+    if (
+        role
+        in (
+            "company_master",
+            "user",
         )
+        and company_id is None
+    ):
+        raise ValueError("company_id est obligatoire pour ce rôle.")
 
     user_record = fb_auth.create_user(
         email=email,
@@ -276,14 +251,11 @@ def list_users(
         "global_master",
         "company_master",
     ):
-        raise PermissionError(
-            "Droits insuffisants pour lister les utilisateurs."
-        )
+        raise PermissionError("Droits insuffisants pour lister les utilisateurs.")
 
     result = []
 
     for u in fb_auth.list_users().iterate_all():
-
         claims = u.custom_claims or {}
 
         role = claims.get("role")
@@ -293,8 +265,7 @@ def list_users(
 
         if (
             current_user["role"] == "company_master"
-            and claims.get("company_id")
-            != current_user["company_id"]
+            and claims.get("company_id") != current_user["company_id"]
         ):
             continue
 
@@ -326,9 +297,7 @@ def set_user_active(
         current_user,
         target,
     ):
-        raise PermissionError(
-            "Droits insuffisants pour modifier ce compte."
-        )
+        raise PermissionError("Droits insuffisants pour modifier ce compte.")
 
     fb_auth.update_user(
         target["uid"],
@@ -349,24 +318,11 @@ def set_user_pages(
         current_user,
         target,
     ):
-        raise PermissionError(
-            "Droits insuffisants pour modifier les pages "
-            "de ce compte."
-        )
+        raise PermissionError("Droits insuffisants pour modifier les pages de ce compte.")
 
-    existing_claims = (
-        fb_auth
-        .get_user(target["uid"])
-        .custom_claims
-        or {}
-    )
+    existing_claims = fb_auth.get_user(target["uid"]).custom_claims or {}
 
-    existing_claims["pages"] = {
-        key: bool(
-            pages.get(key, False)
-        )
-        for key in permissions.PAGE_KEYS
-    }
+    existing_claims["pages"] = {key: bool(pages.get(key, False)) for key in permissions.PAGE_KEYS}
 
     fb_auth.set_custom_user_claims(
         target["uid"],
@@ -382,16 +338,11 @@ def list_companies():
     companies = {}
 
     for user in fb_auth.list_users().iterate_all():
-
         claims = user.custom_claims or {}
 
-        company_id = claims.get(
-            "company_id"
-        )
+        company_id = claims.get("company_id")
 
-        company_name = claims.get(
-            "company_name"
-        )
+        company_name = claims.get("company_name")
 
         if not company_id or not company_name:
             continue
@@ -403,6 +354,5 @@ def list_companies():
 
     return sorted(
         companies.values(),
-        key=lambda company:
-            company["company_name"].lower(),
+        key=lambda company: company["company_name"].lower(),
     )

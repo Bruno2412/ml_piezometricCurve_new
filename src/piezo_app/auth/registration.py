@@ -25,15 +25,15 @@ Flux :
 
 from urllib.parse import quote
 
+import streamlit as st
 from firebase_admin import auth as fb_auth
 from firebase_admin.auth import ActionCodeSettings
-import streamlit as st
 
 from piezo_app.auth import permissions
 from piezo_app.services.email_service import (
-    send_verification_email,
-    send_admin_notification_email,
     send_account_activation_email,
+    send_admin_notification_email,
+    send_verification_email,
 )
 
 
@@ -66,29 +66,19 @@ def register_user(
     company_name = company_name.strip()
 
     if not email:
-        raise ValueError(
-            "L'adresse email est obligatoire."
-        )
+        raise ValueError("L'adresse email est obligatoire.")
 
     if not password:
-        raise ValueError(
-            "Le mot de passe est obligatoire."
-        )
+        raise ValueError("Le mot de passe est obligatoire.")
 
     if len(password) < 8:
-        raise ValueError(
-            "Le mot de passe doit contenir au moins 8 caractères."
-        )
+        raise ValueError("Le mot de passe doit contenir au moins 8 caractères.")
 
     if not company_id:
-        raise ValueError(
-            "L'identifiant de la société est obligatoire."
-        )
+        raise ValueError("L'identifiant de la société est obligatoire.")
 
     if not company_name:
-        raise ValueError(
-            "Le nom de la société est obligatoire."
-        )
+        raise ValueError("Le nom de la société est obligatoire.")
 
     # ---------------------------------------------------------
     # Création du compte Firebase
@@ -111,10 +101,7 @@ def register_user(
             "company_id": company_id,
             "company_name": company_name,
             "approved": False,
-            "pages": {
-                key: False
-                for key in permissions.PAGE_KEYS
-            },
+            "pages": {key: False for key in permissions.PAGE_KEYS},
         }
 
         fb_auth.set_custom_user_claims(
@@ -128,9 +115,7 @@ def register_user(
         # -----------------------------------------------------
 
         try:
-            fb_auth.delete_user(
-                user_record.uid
-            )
+            fb_auth.delete_user(user_record.uid)
         except Exception:
             pass
 
@@ -221,25 +206,19 @@ def activate_user(
     # ---------------------------------------------------------
 
     if current_user["role"] != permissions.GLOBAL_MASTER:
-        raise PermissionError(
-            "Seul un global_master peut activer un compte."
-        )
+        raise PermissionError("Seul un global_master peut activer un compte.")
 
     if not permissions.can_modify_target(
         current_user,
         target,
     ):
-        raise PermissionError(
-            "Droits insuffisants pour modifier ce compte."
-        )
+        raise PermissionError("Droits insuffisants pour modifier ce compte.")
 
     # ---------------------------------------------------------
     # Récupération du compte Firebase
     # ---------------------------------------------------------
 
-    user_record = fb_auth.get_user(
-        target["uid"]
-    )
+    user_record = fb_auth.get_user(target["uid"])
 
     # ---------------------------------------------------------
     # Conservation des claims existantes
@@ -249,10 +228,7 @@ def activate_user(
 
     # Sécurité : le compte doit rester un utilisateur standard.
     if claims.get("role") != permissions.USER:
-        raise ValueError(
-            "Seuls les comptes utilisateur peuvent être activés "
-            "avec cette fonction."
-        )
+        raise ValueError("Seuls les comptes utilisateur peuvent être activés avec cette fonction.")
 
     # ---------------------------------------------------------
     # Approbation
@@ -264,12 +240,7 @@ def activate_user(
     # Attribution des pages
     # ---------------------------------------------------------
 
-    claims["pages"] = {
-        key: bool(
-            pages.get(key, False)
-        )
-        for key in permissions.PAGE_KEYS
-    }
+    claims["pages"] = {key: bool(pages.get(key, False)) for key in permissions.PAGE_KEYS}
 
     # ---------------------------------------------------------
     # Enregistrement des claims

@@ -12,7 +12,6 @@ pas contre un rerun avec un st.session_state trafiqué.
 
 from unittest import mock
 
-import pytest
 import streamlit as st
 
 from piezo_app.auth import permissions

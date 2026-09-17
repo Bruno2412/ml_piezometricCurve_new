@@ -22,7 +22,6 @@ from piezo_app.auth.authentication import (
     list_users,
     set_user_active,
 )
-
 from piezo_app.auth.permissions import (
     ADMIN_ROLES,
     COMPANY_MASTER,

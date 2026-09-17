@@ -4,9 +4,10 @@ services/email_service.py — Emails du parcours d'inscription/activation.
 """
 
 import smtplib
-import streamlit as st
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+import streamlit as st
 
 
 def send_verification_email(to_email: str, verify_link: str) -> bool:
@@ -39,7 +40,9 @@ def send_verification_email(to_email: str, verify_link: str) -> bool:
         return False
 
 
-def send_admin_notification_email(admin_emails: list[str], new_user_email: str, company_name: str = "") -> bool:
+def send_admin_notification_email(
+    admin_emails: list[str], new_user_email: str, company_name: str = ""
+) -> bool:
     smtp_config = st.secrets["smtp"]
 
     msg = MIMEMultipart("alternative")
@@ -86,7 +89,9 @@ def send_account_activation_email(to_email: str, pages: dict) -> bool:
     smtp_config = st.secrets["smtp"]
 
     active_pages = [key for key, allowed in (pages or {}).items() if allowed]
-    pages_list_html = "".join(f"<li>{p}</li>" for p in active_pages) or "<li>(aucune page activée)</li>"
+    pages_list_html = (
+        "".join(f"<li>{p}</li>" for p in active_pages) or "<li>(aucune page activée)</li>"
+    )
     pages_list_text = ", ".join(active_pages) or "(aucune page activée)"
 
     msg = MIMEMultipart("alternative")
