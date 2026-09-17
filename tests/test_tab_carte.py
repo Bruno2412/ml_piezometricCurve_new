@@ -4,4 +4,3 @@ Created on Mon Sep 14 14:07:08 2026
 
 @author: bruno
 """
-

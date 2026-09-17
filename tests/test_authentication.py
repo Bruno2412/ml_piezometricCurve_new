@@ -35,10 +35,18 @@ def _fake_response(status_code=200, json_data=None):
     return resp
 
 
-def _fake_user_record(uid="uid-123", email="user@example.com", disabled=False, custom_claims=None):
+def _fake_user_record(
+    uid="uid-123", email="user@example.com", disabled=False, email_verified=True, custom_claims=None
+):
     """Imite un UserRecord Firebase Admin (seuls les attributs utilisés
     par authentication.py sont présents)."""
-    return SimpleNamespace(uid=uid, email=email, disabled=disabled, custom_claims=custom_claims)
+    return SimpleNamespace(
+        uid=uid,
+        email=email,
+        disabled=disabled,
+        email_verified=email_verified,
+        custom_claims=custom_claims,
+    )
 
 
 SIGNIN_SUCCESS_BODY = {
@@ -476,7 +484,9 @@ class TestSetUserPages:
             mock.patch.object(
                 authentication.fb_auth,
                 "get_user",
-                return_value=_fake_user_record(custom_claims={"role": "user", "company_id": "acme"}),
+                return_value=_fake_user_record(
+                    custom_claims={"role": "user", "company_id": "acme"}
+                ),
             ),
             mock.patch.object(authentication.fb_auth, "set_custom_user_claims") as mocked_set,
         ):

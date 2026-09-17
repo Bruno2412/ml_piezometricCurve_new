@@ -111,4 +111,3 @@ class TestPagePermissionsForm:
         # pour u-1.
         called_targets = [call.args[1]["uid"] for call in mocked_pages.call_args_list]
         assert called_targets == ["u-1"]
-

@@ -76,7 +76,6 @@ if "user" not in st.session_state:
 # =========================================================
 
 if st.session_state.user is None:
-
     pages = [
         st.Page(
             login.require_login,
@@ -120,9 +119,7 @@ pages = [
 # Administration
 # ---------------------------------------------------------
 
-if permissions.can_administer_users(
-    st.session_state.user
-):
+if permissions.can_administer_users(st.session_state.user):
     pages.append(
         st.Page(
             "src/piezo_app/app_pages/admin.py",

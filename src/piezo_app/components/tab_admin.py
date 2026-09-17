@@ -49,9 +49,7 @@ def _render_page_permissions_form(current_user, target: dict):
         choices = {}
         for key in permissions.PAGE_KEYS:
             label = permissions.PAGE_LABELS[key]
-            help_text = (
-                "Nécessite aussi « Analyse & Prévision »" if key == "twin" else None
-            )
+            help_text = "Nécessite aussi « Analyse & Prévision »" if key == "twin" else None
             choices[key] = st.checkbox(label, value=key in current, help=help_text)
 
         if st.form_submit_button("Enregistrer"):
@@ -94,9 +92,7 @@ def render():
         st.info("Aucun utilisateur à afficher pour cette société.")
     else:
         for u in visible_users:
-            col_email, col_role, col_status, col_action, col_pages = st.columns(
-                [3, 2, 2, 2, 2]
-            )
+            col_email, col_role, col_status, col_action, col_pages = st.columns([3, 2, 2, 2, 2])
             col_email.write(u["email"])
             col_role.write(u["role"])
             col_status.write("🔴 Désactivé" if u["disabled"] else "🟢 Actif")

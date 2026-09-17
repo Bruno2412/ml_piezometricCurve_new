@@ -73,9 +73,7 @@ def _render_per_company_table(all_users, companies):
     rows = []
     for cid, cname in sorted(companies.items(), key=lambda kv: kv[1] or kv[0]):
         company_users = [u for u in all_users if u["company_id"] == cid]
-        cm_email = next(
-            (u["email"] for u in company_users if u["role"] == "company_master"), "—"
-        )
+        cm_email = next((u["email"] for u in company_users if u["role"] == "company_master"), "—")
         n_users = sum(1 for u in company_users if u["role"] == "user")
         n_active = sum(1 for u in company_users if not u["disabled"])
         rows.append(
@@ -101,9 +99,7 @@ def _render_filterable_accounts(user, all_users, companies):
 
     filtered = all_users
     if company_choice != "Toutes":
-        target_cid = next(
-            cid for cid, name in companies.items() if (name or cid) == company_choice
-        )
+        target_cid = next(cid for cid, name in companies.items() if (name or cid) == company_choice)
         filtered = [u for u in filtered if u["company_id"] == target_cid]
     if role_choice != "Tous":
         filtered = [u for u in filtered if u["role"] == role_choice]
@@ -117,9 +113,7 @@ def _render_filterable_accounts(user, all_users, companies):
         return
 
     for u in filtered:
-        col_email, col_company, col_role, col_status, col_action = st.columns(
-            [3, 2, 2, 2, 2]
-        )
+        col_email, col_company, col_role, col_status, col_action = st.columns([3, 2, 2, 2, 2])
         col_email.write(u["email"])
         col_company.write(u["company_name"] or "—")
         col_role.write(u["role"])
@@ -136,23 +130,19 @@ def _render_filterable_accounts(user, all_users, companies):
                 except PermissionError as e:
                     st.error(str(e))
 
+
 def _render_page_permissions(user, all_users):
     st.divider()
     st.subheader("Gestion des accès aux pages")
 
-    editable_users = [
-        u
-        for u in all_users
-        if permissions.can_modify_target(user, u)
-    ]
+    editable_users = [u for u in all_users if permissions.can_modify_target(user, u)]
 
     if not editable_users:
         st.info("Aucun compte ne peut être modifié.")
         return
 
     user_labels = {
-        u["uid"]: f"{u['email']} — {u['company_name'] or 'Sans société'}"
-        for u in editable_users
+        u["uid"]: f"{u['email']} — {u['company_name'] or 'Sans société'}" for u in editable_users
     }
 
     selected_uid = st.selectbox(
@@ -161,10 +151,7 @@ def _render_page_permissions(user, all_users):
         format_func=lambda uid: user_labels[uid],
     )
 
-    target = next(
-        u for u in editable_users
-        if u["uid"] == selected_uid
-    )
+    target = next(u for u in editable_users if u["uid"] == selected_uid)
 
     current_pages = permissions.allowed_pages(target)
 
@@ -191,9 +178,7 @@ def _render_page_permissions(user, all_users):
                 selected_pages,
             )
 
-            st.success(
-                f"Les permissions de {target['email']} ont été enregistrées."
-            )
+            st.success(f"Les permissions de {target['email']} ont été enregistrées.")
 
             st.rerun()
 

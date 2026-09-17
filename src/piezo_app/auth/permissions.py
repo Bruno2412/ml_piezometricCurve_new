@@ -48,11 +48,13 @@ def require_role(user: dict, allowed_roles: tuple):
     if user["role"] not in allowed_roles:
         raise PermissionError(f"Rôle '{user['role']}' insuffisant (requis : {allowed_roles}).")
 
+
 def can_assign_company_master(current_user: dict) -> bool:
     """
     Seul un global_master peut attribuer le rôle company_master.
     """
     return current_user.get("role") == GLOBAL_MASTER
+
 
 def can_create_user_for(actor: dict, target_role: str, target_company_id: str | None) -> bool:
     """Décide si `actor` a le droit de créer un compte de rôle et de
@@ -150,17 +152,14 @@ def allowed_pages(user: dict) -> set:
     # ---------------------------------------------------------
     raw = user.get("pages") or {}
 
-    allowed = {
-        key
-        for key in PAGE_KEYS
-        if raw.get(key, False)
-    }
+    allowed = {key for key in PAGE_KEYS if raw.get(key, False)}
 
     # Le Digital Twin dépend de l'Analyse & Prévision.
     if "twin" in allowed and "analyse" not in allowed:
         allowed.discard("twin")
 
     return allowed
+
 
 # def allowed_pages(user: dict) -> set:
 #     """Ensemble des clés d'onglets auxquels `user` a droit.

@@ -1,3 +1,20 @@
+# -*- coding: utf-8 -*-
+"""
+auth/registration.py — Gestion des inscriptions publiques.
+
+Flux :
+    1. L'utilisateur s'inscrit.
+    2. Le compte Firebase est créé désactivé.
+    3. Le rôle est obligatoirement "user".
+    4. approved = False.
+    5. Toutes les pages sont désactivées.
+    6. Un email de vérification est envoyé à l'utilisateur.
+    7. L'utilisateur confirme son adresse email.
+    8. L'application vérifie email_verified auprès de Firebase.
+    9. Le global_master est alors notifié.
+   10. Le global_master pourra ensuite approuver et activer le compte.
+"""
+
 from urllib.parse import quote
 
 from firebase_admin import auth as fb_auth
@@ -21,23 +38,37 @@ def register_user(
     Crée un utilisateur depuis l'inscription publique.
 
     Le rôle est toujours USER.
-    Un utilisateur ne peut jamais choisir son rôle.
-    Le compte est créé désactivé (email non vérifié en plus, à titre
-    informatif pour l'administrateur qui validera le compte).
+    L'utilisateur ne peut jamais choisir son rôle.
 
-    Les droits d'accès aux pages sont initialisés à False.
-    Ils devront être attribués explicitement par un administrateur.
+    Le compte est créé :
+        - disabled = True
+        - email_verified = False
+        - approved = False
+        - toutes les pages = False
+
+    Un email de vérification Firebase est ensuite envoyé
+    à l'utilisateur.
+
+    Aucun email n'est envoyé au global_master à ce stade.
     """
 
     email = email.strip().lower()
     company_id = company_id.strip()
     company_name = company_name.strip()
 
+    # ---------------------------------------------------------
+    # Validation des données
+    # ---------------------------------------------------------
+
     if not email:
-        raise ValueError("L'adresse email est obligatoire.")
+        raise ValueError(
+            "L'adresse email est obligatoire."
+        )
 
     if not password:
-        raise ValueError("Le mot de passe est obligatoire.")
+        raise ValueError(
+            "Le mot de passe est obligatoire."
+        )
 
     if len(password) < 8:
         raise ValueError(
@@ -67,18 +98,21 @@ def register_user(
 
     try:
         # -----------------------------------------------------
-        # Attribution des droits
+        # Attribution des custom claims
         # -----------------------------------------------------
         #
         # Une inscription publique crée TOUJOURS un user.
         #
-        # Sécurité stricte :
-        # aucun accès aux fonctionnalités métier par défaut.
+        # Le compte n'est pas encore approuvé.
         #
+        # Aucun accès aux fonctionnalités métier par défaut.
+        #
+
         claims = {
             "role": permissions.USER,
             "company_id": company_id,
             "company_name": company_name,
+            "approved": False,
             "pages": {
                 key: False
                 for key in permissions.PAGE_KEYS
@@ -91,74 +125,150 @@ def register_user(
         )
 
     except Exception:
-        # Évite de laisser un compte Firebase orphelin si
-        # l'attribution des claims échoue.
+        # -----------------------------------------------------
+        # Nettoyage en cas d'échec
+        # -----------------------------------------------------
+        #
+        # Si l'attribution des claims échoue, on supprime
+        # le compte afin d'éviter un compte Firebase orphelin.
+        #
+
         try:
-            fb_auth.delete_user(user_record.uid)
+            fb_auth.delete_user(
+                user_record.uid
+            )
         except Exception:
             pass
 
         raise
 
     # ---------------------------------------------------------
-    # Envoi de l'email de confirmation
+    # Génération et envoi du mail de vérification
     # ---------------------------------------------------------
     #
-    # Best-effort : un échec d'envoi ne doit pas empêcher la création
-    # du compte, qui reste de toute façon bloqué (disabled=True)
-    # jusqu'à validation manuelle par un administrateur. On journalise
-    # simplement l'échec pour investigation.
+    # Firebase génère un lien à usage unique.
     #
-    # Le lien redirige ensuite l'utilisateur vers notre propre page
-    # (?action=email_verified) plutôt que vers la page générique
-    # Firebase, pour afficher un message adapté ("en attente de
-    # validation par un administrateur").
+    # Après validation, Firebase positionnera :
     #
+    #     email_verified = True
+    #
+    # Le global_master n'est PAS notifié ici.
+    #
+
     try:
-        app_url = st.secrets.get("app", {}).get("base_url", "http://localhost:8501")
+        app_url = (
+            st.secrets
+            .get("app", {})
+            .get(
+                "base_url",
+                "http://localhost:8501",
+            )
+        )
+
         action_code_settings = ActionCodeSettings(
-            url=f"{app_url}/?action=email_verified&email={quote(email)}",
+            url=(
+                f"{app_url}/"
+                f"?action=email_verified"
+                f"&email={quote(email)}"
+            ),
             handle_code_in_app=False,
         )
-        link = fb_auth.generate_email_verification_link(email, action_code_settings)
-        send_verification_email(email, link)
+
+        link = fb_auth.generate_email_verification_link(
+            email,
+            action_code_settings,
+        )
+
+        send_verification_email(
+            email,
+            link,
+        )
+
     except Exception as e:
-        print(f"Échec d'envoi de l'email de confirmation pour {email} : {e}")
+        # L'inscription reste créée.
+        # Le compte reste cependant désactivé.
+        print(
+            "Échec d'envoi de l'email de confirmation "
+            f"pour {email} : {e}"
+        )
 
     return user_record.uid
 
 
-def notify_admins_of_email_confirmation(email: str) -> None:
+def notify_admins_of_email_confirmation(
+    email: str,
+) -> None:
     """
-    Envoie une notification aux administrateurs (global_master) lorsque
-    l'email d'un utilisateur inscrit vient d'être confirmé.
+    Notifie les global_master lorsqu'un utilisateur a effectivement
+    confirmé son adresse email.
 
-    Idempotent : un custom claim `admin_notified` est posé sur le compte
-    après le premier envoi, pour ne jamais notifier deux fois pour le
-    même compte (ex. si le lien est cliqué plusieurs fois).
+    IMPORTANT :
+    cette fonction ne doit être appelée qu'après le retour de Firebase
+    indiquant que l'adresse email est vérifiée.
+
+    Une vérification supplémentaire de email_verified est effectuée
+    directement auprès de Firebase avant l'envoi du mail.
     """
+
+    email = email.strip().lower()
+
+    if not email:
+        return
+
+    # ---------------------------------------------------------
+    # Récupération du compte Firebase
+    # ---------------------------------------------------------
+
     try:
-        user_record = fb_auth.get_user_by_email(email)
+        user_record = fb_auth.get_user_by_email(
+            email
+        )
     except Exception:
         return
 
+    # ---------------------------------------------------------
+    # Sécurité :
+    # on ne notifie que si Firebase confirme réellement
+    # la vérification de l'adresse email.
+    # ---------------------------------------------------------
+
+    if not user_record.email_verified:
+        return
+
+    # ---------------------------------------------------------
+    # Récupération des informations d'inscription
+    # ---------------------------------------------------------
+
     claims = user_record.custom_claims or {}
 
-    if claims.get("admin_notified"):
-        return
+    company_name = claims.get(
+        "company_name",
+        "",
+    )
+
+    # ---------------------------------------------------------
+    # Recherche des global_master
+    # ---------------------------------------------------------
 
     admin_emails = [
         u.email
         for u in fb_auth.list_users().iterate_all()
-        if (u.custom_claims or {}).get("role") == permissions.GLOBAL_MASTER
+        if (
+            u.email
+            and (u.custom_claims or {}).get("role")
+            == permissions.GLOBAL_MASTER
+        )
     ]
 
-    if admin_emails:
-        send_admin_notification_email(
-            admin_emails,
-            new_user_email=email,
-            company_name=claims.get("company_name", ""),
-        )
+    if not admin_emails:
+        return
 
-    claims["admin_notified"] = True
-    fb_auth.set_custom_user_claims(user_record.uid, claims)
+    # ---------------------------------------------------------
+    # Notification
+    # ---------------------------------------------------------
+
+    send_admin_notification_email(
+        admin_emails,
+        new_user_email=email,
+        company_name=company_name,
+    )

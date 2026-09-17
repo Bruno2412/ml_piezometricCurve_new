@@ -37,8 +37,11 @@ def send_verification_email(to_email: str, verify_link: str) -> bool:
     except Exception as e:
         print(f"Erreur envoi email: {e}")
         return False
-    
-def send_admin_notification_email(admin_emails: list[str], new_user_email: str, company_name: str = "") -> bool:
+
+
+def send_admin_notification_email(
+    admin_emails: list[str], new_user_email: str, company_name: str = ""
+) -> bool:
     smtp_config = st.secrets["smtp"]
 
     msg = MIMEMultipart("alternative")

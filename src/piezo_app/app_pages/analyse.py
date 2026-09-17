@@ -176,7 +176,7 @@ if chroniques_file is not None or excel_file is not None:
                 # tab_reseau.render()/tab_analyse.render()/etc. ne sont
                 # jamais appelées pour un onglet refusé, ce n'est donc pas
                 # qu'une question d'affichage.
-                #allowed = permissions.allowed_pages(st.session_state.user)
+                # allowed = permissions.allowed_pages(st.session_state.user)
 
                 tab_specs = [
                     spec
@@ -191,8 +191,7 @@ if chroniques_file is not None or excel_file is not None:
 
                 if not tab_specs:
                     st.warning(
-                        "Aucun onglet ne vous est accessible. "
-                        "Contactez votre administrateur."
+                        "Aucun onglet ne vous est accessible. Contactez votre administrateur."
                     )
                 else:
                     freq = None

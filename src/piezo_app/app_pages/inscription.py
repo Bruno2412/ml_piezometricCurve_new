@@ -74,9 +74,7 @@ def render_registration():
         ),
     )
 
-    is_new_company = (
-        selected_company == "➕ Proposer une nouvelle entreprise"
-    )
+    is_new_company = selected_company == "➕ Proposer une nouvelle entreprise"
 
     # ---------------------------------------------------------
     # Informations de la nouvelle société
@@ -86,7 +84,6 @@ def render_registration():
     new_company_id = ""
 
     if is_new_company:
-
         st.info(
             "Votre société n'apparaît pas dans la liste ? "
             "Vous pouvez proposer sa création. "
@@ -102,8 +99,7 @@ def render_registration():
             "Identifiant de votre société",
             placeholder="Ex. ABC",
             help=(
-                "Identifiant court utilisé pour identifier votre "
-                "organisation dans l'application."
+                "Identifiant court utilisé pour identifier votre organisation dans l'application."
             ),
         )
 
@@ -112,19 +108,16 @@ def render_registration():
     # ---------------------------------------------------------
 
     if is_new_company:
-
         company_name = new_company_name.strip()
         company_id = new_company_id.strip()
 
     elif selected_company in company_mapping:
-
         selected = company_mapping[selected_company]
 
         company_name = selected["company_name"]
         company_id = selected["company_id"]
 
     else:
-
         company_name = ""
         company_id = ""
 
@@ -133,7 +126,6 @@ def render_registration():
     # ---------------------------------------------------------
 
     with st.form("registration_form"):
-
         st.subheader("Informations de connexion")
 
         email = st.text_input(
@@ -178,28 +170,19 @@ def render_registration():
         return
 
     if len(password) < 8:
-        st.error(
-            "Le mot de passe doit contenir au moins 8 caractères."
-        )
+        st.error("Le mot de passe doit contenir au moins 8 caractères.")
         return
 
     if not selected_company or selected_company == company_options[0]:
-        st.error(
-            "Veuillez sélectionner une société ou proposer une "
-            "nouvelle entreprise."
-        )
+        st.error("Veuillez sélectionner une société ou proposer une nouvelle entreprise.")
         return
 
     if not company_name:
-        st.error(
-            "Veuillez renseigner le nom de votre société."
-        )
+        st.error("Veuillez renseigner le nom de votre société.")
         return
 
     if not company_id:
-        st.error(
-            "Veuillez renseigner l'identifiant de votre société."
-        )
+        st.error("Veuillez renseigner l'identifiant de votre société.")
         return
 
     # ---------------------------------------------------------
@@ -207,14 +190,9 @@ def render_registration():
     # ---------------------------------------------------------
 
     if is_new_company:
-
-        existing_company_ids = {
-            company["company_id"].strip().lower()
-            for company in companies
-        }
+        existing_company_ids = {company["company_id"].strip().lower() for company in companies}
 
         if company_id.lower() in existing_company_ids:
-
             st.error(
                 "Cet identifiant de société existe déjà. "
                 "Veuillez sélectionner la société correspondante "
@@ -227,7 +205,6 @@ def render_registration():
     # ---------------------------------------------------------
 
     try:
-
         register_user(
             email=email,
             password=password,
@@ -236,44 +213,28 @@ def render_registration():
         )
 
     except fb_auth.EmailAlreadyExistsError:
-
-        st.error(
-            "Cette adresse email possède déjà un compte."
-        )
+        st.error("Cette adresse email possède déjà un compte.")
         return
 
     except fb_auth.InvalidEmailError:
-
-        st.error(
-            "L'adresse email renseignée n'est pas valide."
-        )
+        st.error("L'adresse email renseignée n'est pas valide.")
         return
 
     except fb_auth.WeakPasswordError:
-
-        st.error(
-            "Le mot de passe est trop faible."
-        )
+        st.error("Le mot de passe est trop faible.")
         return
 
     except Exception:
-
-        st.error(
-            "Impossible de créer le compte. "
-            "Veuillez réessayer ou contacter l'administrateur."
-        )
+        st.error("Impossible de créer le compte. Veuillez réessayer ou contacter l'administrateur.")
         return
 
     # ---------------------------------------------------------
     # Succès
     # ---------------------------------------------------------
 
-    st.success(
-        "Votre demande d'inscription a bien été enregistrée."
-    )
+    st.success("Votre demande d'inscription a bien été enregistrée.")
 
     if is_new_company:
-
         st.info(
             f"Votre demande de création de l'entreprise "
             f"« {company_name} » a également été enregistrée. "
@@ -281,7 +242,6 @@ def render_registration():
         )
 
     else:
-
         st.info(
             f"Votre demande de rattachement à "
             f"« {company_name} » a été enregistrée. "
