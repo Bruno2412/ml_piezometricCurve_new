@@ -337,7 +337,7 @@ def set_user_active(
     _fetch_all_users_raw.clear()
 
 
-def set_user_role(                                                    
+def set_user_role(
     current_user: dict,
     target: dict,
     new_role: str,

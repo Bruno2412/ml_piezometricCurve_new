@@ -162,9 +162,7 @@ def _render_role_management(user, all_users, companies):
     target = next(u for u in editable_users if u["uid"] == selected_uid)
 
     role_options = ["user", "company_master"]
-    current_role_index = (
-        role_options.index(target["role"]) if target["role"] in role_options else 0
-    )
+    current_role_index = role_options.index(target["role"]) if target["role"] in role_options else 0
 
     col_role, col_company = st.columns(2)
 

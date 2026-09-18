@@ -105,6 +105,7 @@ def can_modify_target(actor: dict, target: dict) -> bool:
         return False
     return True
 
+
 def assignable_pages(actor: dict) -> set:
     """
     Pages qu'un acteur a le droit d'accorder à un compte qu'il
