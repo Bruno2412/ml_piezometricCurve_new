@@ -122,6 +122,7 @@ if chroniques_file is not None or excel_file is not None:
         st.error(f"Erreur parsing : {e}")
         points = []
         has_masse = False
+    st.write("DEBUG points:", points)   # ← ligne temporaire
 
     # 4. Sélection des points
     if points:
