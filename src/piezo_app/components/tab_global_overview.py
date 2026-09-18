@@ -35,9 +35,6 @@ def render():
         st.error("Impossible de charger les comptes.")
         return
 
-    # Les sociétés sont déduites des comptes existants (pas de
-    # collection "companies" séparée pour l'instant — même approche
-    # que components/project_selector.py).
     companies = {}
     for u in all_users:
         if u["company_id"]:
@@ -48,6 +45,7 @@ def render():
     _render_per_company_table(all_users, companies)
     st.divider()
     _render_filterable_accounts(user, all_users, companies)
+    _render_role_management(user, all_users, companies)   # ← nouvel appel
     _render_page_permissions(user, all_users)
 
 
@@ -129,6 +127,90 @@ def _render_filterable_accounts(user, all_users, companies):
                     st.rerun()
                 except PermissionError as e:
                     st.error(str(e))
+           
+                    
+def _render_role_management(user, all_users, companies):
+    st.divider()
+    st.subheader("Gestion des rôles")
+
+    editable_users = [u for u in all_users if permissions.can_modify_target(user, u)]
+
+    if not editable_users:
+        st.info("Aucun compte ne peut être modifié.")
+        return
+
+    user_labels = {
+        u["uid"]: f"{u['email']} — {u['role']} ({u['company_name'] or 'Sans société'})"
+        for u in editable_users
+    }
+
+    selected_uid = st.selectbox(
+        "Utilisateur",
+        options=list(user_labels.keys()),
+        format_func=lambda uid: user_labels[uid],
+        key="role_management_user_select",
+    )
+
+    target = next(u for u in editable_users if u["uid"] == selected_uid)
+
+    role_options = ["user", "company_master"]
+    current_role_index = (
+        role_options.index(target["role"]) if target["role"] in role_options else 0
+    )
+
+    col_role, col_company = st.columns(2)
+
+    new_role = col_role.selectbox(
+        "Nouveau rôle",
+        options=role_options,
+        index=current_role_index,
+        key=f"new_role_{target['uid']}",
+    )
+
+    # Société : celle du compte par défaut, modifiable si besoin.
+    company_ids = list(companies.keys())
+    company_display = {cid: (companies[cid] or cid) for cid in company_ids}
+
+    current_company_index = (
+        company_ids.index(target["company_id"]) if target["company_id"] in company_ids else 0
+    )
+
+    new_company_id = None
+    new_company_name = None
+    if company_ids:
+        new_company_id = col_company.selectbox(
+            "Société",
+            options=company_ids,
+            index=current_company_index,
+            format_func=lambda cid: company_display[cid],
+            key=f"new_company_{target['uid']}",
+        )
+        new_company_name = companies[new_company_id]
+    else:
+        col_company.info("Aucune société existante.")
+
+    if st.button(
+        "Enregistrer le rôle",
+        type="primary",
+        key=f"save_role_{target['uid']}",
+    ):
+        try:
+            authentication.set_user_role(
+                current_user=user,
+                target=target,
+                new_role=new_role,
+                new_company_id=new_company_id,
+                new_company_name=new_company_name,
+            )
+
+            st.success(f"Le rôle de {target['email']} a été mis à jour en '{new_role}'.")
+
+            st.rerun()
+
+        except PermissionError as e:
+            st.error(str(e))
+        except ValueError as e:
+            st.error(str(e))
 
 
 def _render_page_permissions(user, all_users):
@@ -184,3 +266,5 @@ def _render_page_permissions(user, all_users):
 
         except PermissionError as e:
             st.error(str(e))
+            
+
