@@ -28,33 +28,32 @@ if not allowed:
     )
     st.stop()
 
-# ── Barre latérale (Paramètres) ──────────────────────────────────────────
-with st.sidebar:
-    st.header("Chroniques (3 points — même masse d'eau)")
-    uploaded_files = st.file_uploader(
-        "Charger l'export ADES : chroniques.txt, descriptif.txt, "
-        "MassesEau.txt (ou un Excel de chroniques déjà préparé)",
-        type=["xlsx", "xls", "txt"],
-        accept_multiple_files=True,
-    )
-    model_name = st.selectbox("Modèle", ["ETS", "ARIMA", "RandomForest", "XGBoost"])
-    if model_name == "ETS":
-        st.caption("ETS = univarié (chronique cible seule).")
-    else:
-        st.caption("Exploite les 3 chroniques (covariables).")
+# ── Paramètres (déplacés depuis la barre latérale vers la page) ──────────
+st.header("Chroniques (3 points — même masse d'eau)")
+uploaded_files = st.file_uploader(
+    "Charger l'export ADES : chroniques.txt, descriptif.txt, "
+    "MassesEau.txt (ou un Excel de chroniques déjà préparé)",
+    type=["xlsx", "xls", "txt"],
+    accept_multiple_files=True,
+)
+model_name = st.selectbox("Modèle", ["ETS", "ARIMA", "RandomForest", "XGBoost"])
+if model_name == "ETS":
+    st.caption("ETS = univarié (chronique cible seule).")
+else:
+    st.caption("Exploite les 3 chroniques (covariables).")
 
-    future_years = st.number_input("Années futures", value=5, min_value=1)
-    validation_years = st.number_input("Années validation", value=5, min_value=1)
-    ci_pct = st.slider("Intervalle de confiance (%)", 50, 99, 68)
-    n_bootstraps = st.number_input("Bootstraps (RF/XGB)", value=200, min_value=10)
+future_years = st.number_input("Années futures", value=5, min_value=1)
+validation_years = st.number_input("Années validation", value=5, min_value=1)
+ci_pct = st.slider("Intervalle de confiance (%)", 50, 99, 68)
+n_bootstraps = st.number_input("Bootstraps (RF/XGB)", value=200, min_value=10)
 
-    st.header("Recharge Maîtrisée")
-    thickness = st.number_input("Épaisseur Aquifère (m)", value=10.0)
-    Q = st.number_input("Débit injecté (m³/jour)", value=0.0)
-    S = st.number_input("Coeff. Emmagasinement (S)", value=0.05, format="%.4f")
-    Area = st.number_input("Surface de l'ouvrage (m²)", value=100.0)
-    distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
-    K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
+st.header("Recharge Maîtrisée")
+thickness = st.number_input("Épaisseur Aquifère (m)", value=10.0)
+Q = st.number_input("Débit injecté (m³/jour)", value=0.0)
+S = st.number_input("Coeff. Emmagasinement (S)", value=0.05, format="%.4f")
+Area = st.number_input("Surface de l'ouvrage (m²)", value=100.0)
+distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
+K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
 
 # ── Extraction des fichiers uploadés (routage par nom, convention ADES) ──
 excel_file, chroniques_file, descriptif_file, masses_eau_file = None, None, None, None
@@ -85,19 +84,19 @@ if chroniques_file is not None or excel_file is not None:
     if descriptif_file is not None:
         try:
             coords_dict = load_descriptif(descriptif_file.getvalue())
-            st.sidebar.success(f"✓ Descriptif chargé ({len(coords_dict)} points)")
+            st.success(f"✓ Descriptif chargé ({len(coords_dict)} points)")
         except Exception as e:
-            st.sidebar.error(f"Erreur lecture descriptif : {e}")
+            st.error(f"Erreur lecture descriptif : {e}")
     else:
-        st.sidebar.info("Pas de descriptif.txt fourni — la carte sera limitée.")
+        st.info("Pas de descriptif.txt fourni — la carte sera limitée.")
 
     masses_eau_dict = {}
     if masses_eau_file is not None:
         try:
             masses_eau_dict = load_masses_eau(masses_eau_file.getvalue())
-            st.sidebar.success(f"✓ MassesEau.txt chargé ({len(masses_eau_dict)} points)")
+            st.success(f"✓ MassesEau.txt chargé ({len(masses_eau_dict)} points)")
         except Exception as e:
-            st.sidebar.warning(f"Impossible de lire MassesEau.txt : {e}")
+            st.warning(f"Impossible de lire MassesEau.txt : {e}")
 
     if masses_eau_dict:
         # Remplace le code brut ('V5#DG240') par le libellé complet et
@@ -116,17 +115,17 @@ if chroniques_file is not None or excel_file is not None:
                 source_df["point"].map(masses_eau_dict).fillna(source_df["masse_eau"])
             )
             has_masse = source_df["masse_eau"].str.len().gt(0).any()
-        st.sidebar.success(
+        st.success(
             f"✓ {len(points)} points détectés" + ("" if has_masse else " (⚠ pas de masse d'eau)")
         )
     except Exception as e:
-        st.sidebar.error(f"Erreur parsing : {e}")
+        st.error(f"Erreur parsing : {e}")
         points = []
         has_masse = False
 
     # 4. Sélection des points
     if points:
-        selection = st.sidebar.multiselect(
+        selection = st.multiselect(
             "Points piézométriques (3 minimum)",
             options=points,
             default=points[: min(3, len(points))],
@@ -134,10 +133,10 @@ if chroniques_file is not None or excel_file is not None:
 
         if len(selection) < 3:
             st.warning(
-                f"Veuillez sélectionner au moins 3 points dans le menu latéral ({len(selection)} actuellement sélectionné(s))."
+                f"Veuillez sélectionner au moins 3 points ({len(selection)} actuellement sélectionné(s))."
             )
         else:
-            target_name = st.sidebar.selectbox("Piézomètre à prévoir", selection)
+            target_name = st.selectbox("Piézomètre à prévoir", selection)
 
             chronicles = {}
             ok = True
@@ -146,7 +145,7 @@ if chroniques_file is not None or excel_file is not None:
                     drop=True
                 )
                 if len(sub) < 24:
-                    st.sidebar.error(f"Point « {name} » : {len(sub)} obs. (min 24).")
+                    st.error(f"Point « {name} » : {len(sub)} obs. (min 24).")
                     ok = False
                     break
                 masse_vals = source_df.loc[source_df["point"] == name, "masse_eau"]
@@ -160,14 +159,14 @@ if chroniques_file is not None or excel_file is not None:
                 if has_masse:
                     masses = {c["masse_eau"].strip().lower() for c in chronicles.values()}
                     if len(masses) > 1:
-                        st.sidebar.error("Points issus de masses d'eau différentes.")
+                        st.error("Points issus de masses d'eau différentes.")
                         ok = False
                     else:
-                        st.sidebar.success(
+                        st.success(
                             f"✓ Même masse d'eau : {list(chronicles.values())[0]['masse_eau']}"
                         )
                 else:
-                    st.sidebar.warning("Masse d'eau non renseignée — à vérifier")
+                    st.warning("Masse d'eau non renseignée — à vérifier")
 
                 # 5. Affichage des Onglets — un utilisateur ne voit que les
                 # onglets que son compte autorise (auth.permissions.
@@ -176,7 +175,6 @@ if chroniques_file is not None or excel_file is not None:
                 # tab_reseau.render()/tab_analyse.render()/etc. ne sont
                 # jamais appelées pour un onglet refusé, ce n'est donc pas
                 # qu'une question d'affichage.
-                # allowed = permissions.allowed_pages(st.session_state.user)
 
                 tab_specs = [
                     spec
@@ -235,6 +233,6 @@ if chroniques_file is not None or excel_file is not None:
 else:
     st.info(
         "👋 Bienvenue. Charge chroniques.txt (+ descriptif.txt et "
-        "MassesEau.txt si disponibles) dans le menu latéral pour démarrer "
+        "MassesEau.txt si disponibles) pour démarrer "
         "l'analyse — ou un Excel de chroniques déjà préparé."
     )
