@@ -135,26 +135,15 @@ pages = [
         "src/piezo_app/app_pages/carto.py",
         title="Cartographie",
         icon=":material/map:",
-        )
+        ),
+    
+    st.Page(
+        "src/piezo_app/app_pages/rapport.py",
+        title="Rapport",
+        icon=":material/assessment:",
+        ),
 ]
 
-# pages = [
-#     st.Page(
-#         "src/piezo_app/app_pages/carto.py",
-#         title="Cartographie",
-#         icon=":material/map:",
-#         default=True,
-#     ),
-# ]
-
-# pages = [
-#     st.Page(
-#         "src/piezo_app/app_pages/rapport.py",
-#         title="Rapport",
-#         icon=":material/assessment:",
-#         default=True,
-#     ),
-# ]
 
 
 # ---------------------------------------------------------
