@@ -15,17 +15,6 @@ appliqués séparément par l'administrateur dans tab_global_overview.py :
     connecté.
 
 Le claim "approved" n'est plus utilisé pour bloquer la connexion.
-
-Cache :
-  - L'appel réseau Firebase le plus coûteux (`fb_auth.list_users().iterate_all()`)
-    est mutualisé et caché via `_fetch_all_users_raw()` (st.cache_data).
-    `list_users()` et `list_companies()` consomment ce cache et appliquent
-    leur propre logique de filtrage/permission à chaque appel (non caché,
-    pour ne jamais figer une décision de droits d'accès).
-  - Toute mutation (create_user, set_user_active, set_user_pages) invalide
-    ce cache via `_fetch_all_users_raw.clear()` pour éviter d'afficher des
-    données périmées.
-  - `authenticate()` n'est jamais caché (sécurité : mots de passe, tokens).
 """
 
 import firebase_admin
@@ -76,10 +65,8 @@ class EmailNotVerifiedError(Exception):
 
 class PendingApprovalError(Exception):
     """
-    Conservée pour compatibilité éventuelle (ex. import ailleurs dans
-    l'application). authenticate() ne la lève plus : un compte
-    désactivé ou sans rôle attribué fait simplement retourner None,
-    au même titre qu'un échec d'authentification classique.
+    Le compte existe mais est désactivé, ou n'a pas encore de rôle
+    attribué.
     """
 
     pass
@@ -97,12 +84,9 @@ def authenticate(
         - ne pas être désactivé ;
         - posséder un rôle.
 
-    Retourne None si l'authentification échoue, y compris si le compte
-    est désactivé ou n'a pas encore de rôle attribué (compte en attente
-    de validation par un administrateur).
+    Retourne None si l'authentification échoue.
 
-    NE JAMAIS mettre cette fonction en cache : elle manipule un mot de
-    passe en clair et génère des tokens de session à chaque appel.
+    Lève PendingApprovalError si le compte est désactivé ou sans rôle.
     """
 
     try:
@@ -163,7 +147,9 @@ def authenticate(
     # ---------------------------------------------------------
 
     if user_record.disabled:
-        return None
+        raise PendingApprovalError(
+            "Votre compte est en attente de validation par un administrateur."
+        )
 
     # ---------------------------------------------------------
     # Custom claims
@@ -174,7 +160,9 @@ def authenticate(
     role = claims.get("role")
 
     if role is None:
-        return None
+        raise PendingApprovalError(
+            "Votre compte est en attente de validation par un administrateur."
+        )
 
     # ---------------------------------------------------------
     # Profil utilisateur
@@ -249,44 +237,7 @@ def create_user(
         claims,
     )
 
-    # Le cache des comptes est désormais périmé : on l'invalide.
-    _fetch_all_users_raw.clear()
-
     return user_record.uid
-
-
-@st.cache_data(ttl=300)
-def _fetch_all_users_raw():
-    """
-    Appel réseau Firebase brut et coûteux (liste tous les comptes).
-    Mis en cache 5 minutes. Ne fait aucun filtrage par permission :
-    c'est aux fonctions appelantes (list_users, list_companies) de
-    filtrer selon le rôle de l'utilisateur courant, à chaque appel,
-    pour ne jamais figer une décision de droits d'accès dans le cache.
-
-    Invalidé explicitement par toute mutation de compte
-    (create_user, set_user_active, set_user_pages) via
-    `_fetch_all_users_raw.clear()`.
-    """
-
-    result = []
-
-    for u in fb_auth.list_users().iterate_all():
-        claims = u.custom_claims or {}
-
-        result.append(
-            {
-                "uid": u.uid,
-                "email": u.email,
-                "role": claims.get("role"),
-                "company_id": claims.get("company_id"),
-                "company_name": claims.get("company_name"),
-                "disabled": u.disabled,
-                "pages": claims.get("pages"),
-            }
-        )
-
-    return result
 
 
 def list_users(
@@ -294,9 +245,6 @@ def list_users(
 ):
     """
     Utilisateurs visibles selon le rôle de l'appelant.
-
-    S'appuie sur le cache `_fetch_all_users_raw()` pour l'appel réseau ;
-    le filtrage par rôle/société est réévalué à chaque appel (non caché).
     """
 
     if current_user["role"] not in (
@@ -305,10 +253,33 @@ def list_users(
     ):
         raise PermissionError("Droits insuffisants pour lister les utilisateurs.")
 
-    result = [u for u in _fetch_all_users_raw() if u["role"] is not None]
+    result = []
 
-    if current_user["role"] == "company_master":
-        result = [u for u in result if u["company_id"] == current_user["company_id"]]
+    for u in fb_auth.list_users().iterate_all():
+        claims = u.custom_claims or {}
+
+        role = claims.get("role")
+
+        if role is None:
+            continue
+
+        if (
+            current_user["role"] == "company_master"
+            and claims.get("company_id") != current_user["company_id"]
+        ):
+            continue
+
+        result.append(
+            {
+                "uid": u.uid,
+                "email": u.email,
+                "role": role,
+                "company_id": claims.get("company_id"),
+                "company_name": claims.get("company_name"),
+                "disabled": u.disabled,
+                "pages": claims.get("pages"),
+            }
+        )
 
     return result
 
@@ -332,9 +303,6 @@ def set_user_active(
         target["uid"],
         disabled=not is_active,
     )
-
-    # Le cache des comptes est désormais périmé : on l'invalide.
-    _fetch_all_users_raw.clear()
 
 
 def set_user_pages(
@@ -361,24 +329,20 @@ def set_user_pages(
         existing_claims,
     )
 
-    # Le cache des comptes est désormais périmé : on l'invalide.
-    _fetch_all_users_raw.clear()
-
 
 def list_companies():
     """
     Retourne la liste des sociétés connues.
-
-    Réutilise le cache `_fetch_all_users_raw()` au lieu de refaire un
-    appel Firebase séparé (évite un doublon avec list_users).
     """
 
     companies = {}
 
-    for user in _fetch_all_users_raw():
-        company_id = user.get("company_id")
+    for user in fb_auth.list_users().iterate_all():
+        claims = user.custom_claims or {}
 
-        company_name = user.get("company_name")
+        company_id = claims.get("company_id")
+
+        company_name = claims.get("company_name")
 
         if not company_id or not company_name:
             continue
