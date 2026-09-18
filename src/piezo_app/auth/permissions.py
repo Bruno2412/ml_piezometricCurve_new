@@ -138,7 +138,7 @@ def assignable_pages(actor: dict) -> set:
 # l'onglet "analyse" : il n'a donc de sens que si "analyse" est aussi
 # autorisé (voir allowed_pages, qui applique cette dépendance).
 
-PAGE_KEYS = ("chroniques", "analyse", "carte", "twin", "interpetations")
+PAGE_KEYS = ("chroniques", "analyse", "carte", "twin", "interpetation")
 
 PAGE_LABELS = {
     "chroniques": "Chroniques",
@@ -179,30 +179,6 @@ def allowed_pages(user: dict) -> set:
         allowed.discard("twin")
 
     return allowed
-
-
-# def allowed_pages(user: dict) -> set:
-#     """Ensemble des clés d'onglets auxquels `user` a droit.
-
-#     Absence de la clé "pages" dans les custom claims (compte créé
-#     avant l'introduction de cette fonctionnalité, ou jamais configuré)
-#     = tout autorisé, pour ne rien casser pour les comptes existants.
-#     Dès qu'un admin enregistre une configuration via
-#     auth.authentication.set_user_pages, seules les clés explicitement
-#     cochées sont autorisées.
-
-#     "twin" est filtré si "analyse" ne l'est pas (dépendance technique,
-#     voir plus haut)."""
-#     raw = user.get("pages")
-#     if raw is None:
-#         allowed = set(PAGE_KEYS)
-#     else:
-#         allowed = {key for key in PAGE_KEYS if raw.get(key, False)}
-
-#     if "twin" in allowed and "analyse" not in allowed:
-#         allowed.discard("twin")
-
-#     return allowed
 
 
 def effective_company_id(user: dict, viewing_company_id: str | None) -> str | None:

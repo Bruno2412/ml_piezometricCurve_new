@@ -7,7 +7,7 @@ import streamlit as st
 
 from piezo_app import piezo_core as core
 from piezo_app.auth import permissions
-from piezo_app.components import tab_analyse, tab_carte, tab_reseau, tab_twin, tab_interpretation
+from piezo_app.components import tab_analyse, tab_carte, tab_chroniques, tab_twin, tab_interpretation
 from piezo_app.data.data_loader import load_chroniques_auto, load_descriptif, load_masses_eau
 
 st.title("Piézométrie - Digital Twin - ...")
@@ -231,7 +231,7 @@ if ok:
             continue
         with tab_by_key[key]:
             if key == "chroniques":
-                tab_reseau.render(chronicles)
+                tab_chroniques.render(chronicles)
             elif key == "analyse":
                 freq = tab_analyse.render(
                     chronicles=chronicles,

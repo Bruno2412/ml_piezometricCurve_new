@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Applique le thème défini dans .streamlit/config.toml aux figures matplotlib
-de l'application (tab_analyse, tab_reseau, tab_twin, piezo_core), pour que
+de l'application (tab_analyse, tab_chroniques, tab_twin, piezo_core), pour que
 les graphiques suivent la même charte que les widgets natifs Streamlit
 (couleurs, police) au lieu du style par défaut de matplotlib.
 
