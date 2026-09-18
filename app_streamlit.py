@@ -132,14 +132,14 @@ pages = [
     ),
 ]
 
-# pages = [
-#     st.Page(
-#         "src/piezo_app/app_pages/carto.py",
-#         title="Cartographie",
-#         icon=":material/map:",
-#         default=True,
-#     ),
-# ]
+pages = [
+    st.Page(
+        "src/piezo_app/app_pages/carto.py",
+        title="Cartographie",
+        icon=":material/map:",
+        default=True,
+    ),
+]
 
 # pages = [
 #     st.Page(
