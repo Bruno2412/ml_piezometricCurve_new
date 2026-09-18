@@ -105,6 +105,24 @@ def can_modify_target(actor: dict, target: dict) -> bool:
         return False
     return True
 
+def assignable_pages(actor: dict) -> set:
+    """
+    Pages qu'un acteur a le droit d'accorder à un compte qu'il
+    administre (via set_user_pages).
+
+    Principe : on ne peut pas déléguer plus de droits qu'on n'en
+    possède soi-même.
+      - un global_master peut accorder n'importe quelle page à
+        n'importe qui ;
+      - un company_master ne peut accorder que les pages auxquelles
+        IL a lui-même accès (voir allowed_pages) — il peut ainsi
+        gérer les onglets de ses users, mais seulement dans la limite
+        de ses propres droits.
+    """
+    if is_global_master(actor):
+        return set(PAGE_KEYS)
+    return allowed_pages(actor)
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Permissions par onglet (Réseau / Analyse / Carte / Digital Twin)

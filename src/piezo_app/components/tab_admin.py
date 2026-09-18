@@ -23,6 +23,11 @@ auth.permissions.can_administer_users) :
   - un company_master ne voit et ne gère que les comptes de sa propre
     société ; il ne peut créer que des user rattachés à celle-ci
 
+La délégation des pages (popover "Pages") est elle aussi bornée : un
+company_master ne peut cocher pour un de ses users que les onglets
+auxquels il a lui-même accès (voir auth.permissions.assignable_pages).
+Il ne peut donc jamais donner plus de droits qu'il n'en a lui-même.
+
 À appeler depuis app_streamlit.py, par exemple :
 
     from components import tab_admin
@@ -41,16 +46,36 @@ def _render_page_permissions_form(current_user, target: dict):
     cocher par onglet (auth.permissions.PAGE_KEYS), pré-remplies avec
     l'état actuel, et un bouton Enregistrer qui appelle
     auth.authentication.set_user_pages (qui revérifie les droits de
-    son côté, ce popover n'est qu'un raccourci d'affichage)."""
+    son côté, ce popover n'est qu'un raccourci d'affichage).
+
+    Un company_master ne peut cocher que les pages auxquelles il a
+    lui-même accès (voir permissions.assignable_pages) : impossible
+    de déléguer un droit qu'on ne possède pas soi-même. Pour un
+    global_master, toutes les pages restent cochables."""
     current = permissions.allowed_pages(target)
+    grantable = permissions.assignable_pages(current_user)
 
     with st.form(f"pages_form_{target['uid']}"):
         st.caption(f"Onglets accessibles pour {target['email']}")
         choices = {}
         for key in permissions.PAGE_KEYS:
             label = permissions.PAGE_LABELS[key]
-            help_text = "Nécessite aussi « Analyse & Prévision »" if key == "twin" else None
-            choices[key] = st.checkbox(label, value=key in current, help=help_text)
+            can_grant = key in grantable
+
+            if key == "twin":
+                help_text = "Nécessite aussi « Analyse & Prévision »"
+            else:
+                help_text = None
+
+            if not can_grant:
+                help_text = "Vous n'avez pas vous-même accès à cet onglet."
+
+            choices[key] = st.checkbox(
+                label,
+                value=key in current,
+                disabled=not can_grant,
+                help=help_text,
+            )
 
         if st.form_submit_button("Enregistrer"):
             try:

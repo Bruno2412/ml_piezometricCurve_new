@@ -15,6 +15,11 @@ un aller-retour vers l'autre page, mais passent par exactement les
 mêmes fonctions sécurisées que tab_admin.py
 (auth.authentication.set_user_active + auth.permissions.can_modify_target) :
 aucune nouvelle règle de droits n'est introduite par ce fichier.
+
+La gestion des rôles (_render_role_management) suit le même principe :
+elle passe par auth.authentication.set_user_role, qui revalide
+lui-même les droits (can_modify_target, can_assign_company_master,
+can_create_user_for) indépendamment de ce que l'UI affiche.
 """
 
 import streamlit as st
@@ -48,6 +53,7 @@ def render():
     _render_per_company_table(all_users, companies)
     st.divider()
     _render_filterable_accounts(user, all_users, companies)
+    _render_role_management(user, all_users, companies)
     _render_page_permissions(user, all_users)
 
 
@@ -131,11 +137,95 @@ def _render_filterable_accounts(user, all_users, companies):
                     st.error(str(e))
 
 
+def _render_role_management(user, all_users, companies):
+    st.divider()
+    st.subheader("Gestion des rôles")
+
+    editable_users = [u for u in all_users if permissions.can_modify_target(user, u)]
+
+    if not editable_users:
+        st.info("Aucun compte ne peut être modifié.")
+        return
+
+    user_labels = {
+        u["uid"]: f"{u['email']} — {u['role']} ({u['company_name'] or 'Sans société'})"
+        for u in editable_users
+    }
+
+    selected_uid = st.selectbox(
+        "Utilisateur",
+        options=list(user_labels.keys()),
+        format_func=lambda uid: user_labels[uid],
+        key="role_management_user_select",
+    )
+
+    target = next(u for u in editable_users if u["uid"] == selected_uid)
+
+    role_options = ["user", "company_master"]
+    current_role_index = (
+        role_options.index(target["role"]) if target["role"] in role_options else 0
+    )
+
+    col_role, col_company = st.columns(2)
+
+    new_role = col_role.selectbox(
+        "Nouveau rôle",
+        options=role_options,
+        index=current_role_index,
+        key=f"new_role_{target['uid']}",
+    )
+
+    company_ids = list(companies.keys())
+    company_display = {cid: (companies[cid] or cid) for cid in company_ids}
+
+    current_company_index = (
+        company_ids.index(target["company_id"]) if target["company_id"] in company_ids else 0
+    )
+
+    new_company_id = None
+    new_company_name = None
+    if company_ids:
+        new_company_id = col_company.selectbox(
+            "Société",
+            options=company_ids,
+            index=current_company_index,
+            format_func=lambda cid: company_display[cid],
+            key=f"new_company_{target['uid']}",
+        )
+        new_company_name = companies[new_company_id]
+    else:
+        col_company.info("Aucune société existante.")
+
+    if st.button(
+        "Enregistrer le rôle",
+        type="primary",
+        key=f"save_role_{target['uid']}",
+    ):
+        try:
+            authentication.set_user_role(
+                current_user=user,
+                target=target,
+                new_role=new_role,
+                new_company_id=new_company_id,
+                new_company_name=new_company_name,
+            )
+
+            st.success(f"Le rôle de {target['email']} a été mis à jour en '{new_role}'.")
+
+            st.rerun()
+
+        except PermissionError as e:
+            st.error(str(e))
+        except ValueError as e:
+            st.error(str(e))
+
+
 def _render_page_permissions(user, all_users):
     st.divider()
     st.subheader("Gestion des accès aux pages")
 
     editable_users = [u for u in all_users if permissions.can_modify_target(user, u)]
+    grantable = permissions.assignable_pages(user)
 
     if not editable_users:
         st.info("Aucun compte ne peut être modifié.")
@@ -149,6 +239,7 @@ def _render_page_permissions(user, all_users):
         "Utilisateur",
         options=list(user_labels.keys()),
         format_func=lambda uid: user_labels[uid],
+        key="page_permissions_user_select",
     )
 
     target = next(u for u in editable_users if u["uid"] == selected_uid)
@@ -160,11 +251,15 @@ def _render_page_permissions(user, all_users):
     selected_pages = {}
 
     for page_key in permissions.PAGE_KEYS:
+        can_grant = page_key in grantable
         selected_pages[page_key] = st.checkbox(
             permissions.PAGE_LABELS[page_key],
             value=page_key in current_pages,
+            disabled=not can_grant,
             key=f"page_permission_{target['uid']}_{page_key}",
         )
+        if not can_grant:
+            st.caption(f"↳ Vous n'avez pas accès à '{permissions.PAGE_LABELS[page_key]}'.")
 
     if st.button(
         "Enregistrer les permissions",

@@ -337,6 +337,60 @@ def set_user_active(
     _fetch_all_users_raw.clear()
 
 
+def set_user_role(                                                    
+    current_user: dict,
+    target: dict,
+    new_role: str,
+    new_company_id: str | None = None,
+    new_company_name: str | None = None,
+):
+    """
+    Modifie le rôle d'un compte existant, et éventuellement sa société
+    (ex. promouvoir un 'user' en 'company_master', avec ou sans
+    changement de société).
+
+    Si new_company_id/new_company_name ne sont pas fournis, la société
+    actuelle du compte est conservée.
+    """
+
+    if not permissions.can_modify_target(current_user, target):
+        raise PermissionError("Droits insuffisants pour modifier ce compte.")
+
+    if new_role == "global_master":
+        raise PermissionError("Le rôle global_master ne peut pas être attribué depuis cet écran.")
+
+    if new_role == "company_master" and not permissions.can_assign_company_master(current_user):
+        raise PermissionError("Seul un global_master peut attribuer le rôle company_master.")
+
+    target_company_id = new_company_id if new_company_id is not None else target.get("company_id")
+    target_company_name = (
+        new_company_name if new_company_name is not None else target.get("company_name")
+    )
+
+    if not permissions.can_create_user_for(current_user, new_role, target_company_id):
+        raise PermissionError(
+            f"Le rôle '{current_user['role']}' ne peut pas attribuer "
+            f"le rôle '{new_role}' à cette société."
+        )
+
+    if new_role in ("company_master", "user") and target_company_id is None:
+        raise ValueError("company_id est obligatoire pour ce rôle.")
+
+    existing_claims = fb_auth.get_user(target["uid"]).custom_claims or {}
+
+    existing_claims["role"] = new_role
+    existing_claims["company_id"] = target_company_id
+    existing_claims["company_name"] = target_company_name
+
+    fb_auth.set_custom_user_claims(
+        target["uid"],
+        existing_claims,
+    )
+
+    # Le cache des comptes est désormais périmé : on l'invalide.
+    _fetch_all_users_raw.clear()
+
+
 def set_user_pages(
     current_user: dict,
     target: dict,
@@ -344,6 +398,9 @@ def set_user_pages(
 ):
     """
     Définit les pages accessibles à un utilisateur.
+
+    Un company_master ne peut accorder à ses users que les pages
+    auxquelles il a lui-même accès (voir permissions.assignable_pages).
     """
 
     if not permissions.can_modify_target(
@@ -351,6 +408,16 @@ def set_user_pages(
         target,
     ):
         raise PermissionError("Droits insuffisants pour modifier les pages de ce compte.")
+
+    grantable = permissions.assignable_pages(current_user)
+
+    requested = {key for key in permissions.PAGE_KEYS if pages.get(key, False)}
+
+    if not requested.issubset(grantable):
+        raise PermissionError(
+            "Vous ne pouvez pas accorder un accès à une page à laquelle "
+            "vous n'avez pas vous-même accès."
+        )
 
     existing_claims = fb_auth.get_user(target["uid"]).custom_claims or {}
 
@@ -361,7 +428,6 @@ def set_user_pages(
         existing_claims,
     )
 
-    # Le cache des comptes est désormais périmé : on l'invalide.
     _fetch_all_users_raw.clear()
 
 
