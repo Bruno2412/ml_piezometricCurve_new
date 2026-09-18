@@ -232,6 +232,7 @@ if ok:
         with tab_by_key[key]:
             if key == "chroniques":
                 tab_chroniques.render(chronicles)
+                
             elif key == "analyse":
                 freq = tab_analyse.render(
                     chronicles=chronicles,
@@ -265,5 +266,15 @@ if ok:
                 )
             elif key == "interpretation":
                 tab_interpretation.render(
-                        
+                    chronicles=chronicles,
+                    selection=selection,
+                    target_name=target_name,
+                    freq=freq,
+                    ok=ok,
+                    Q=Q,
+                    S=S,
+                    K=K,
+                    thickness=thickness,
+                    distance=distance,
+                    Area=Area,
                     )
