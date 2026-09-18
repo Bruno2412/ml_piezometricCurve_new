@@ -7,7 +7,7 @@ import streamlit as st
 
 from piezo_app import piezo_core as core
 from piezo_app.auth import permissions
-from piezo_app.components import tab_analyse, tab_carte, tab_reseau, tab_twin
+from piezo_app.components import tab_analyse, tab_carte, tab_reseau, tab_twin, tab_interpretation
 from piezo_app.data.data_loader import load_chroniques_auto, load_descriptif, load_masses_eau
 
 st.title("Piézométrie - Digital Twin - ...")
@@ -38,11 +38,11 @@ if st.session_state.data_ready:
     tab_specs = [("parametres", "Paramètres")] + [
         spec
         for spec in (
-            ("reseau", "Réseau"),
+            ("chroniques", "Chroniques"),
             ("analyse", "Analyse & Prévision"),
             ("carte", "Carte Piézométrique"),
             ("twin", "Digital Twin"),
-            ("interprétation", "Interprétation hydrogéologique"),
+            ("interpretation", "Interprétation hydrogéologique"),
         )
         if spec[0] in allowed
     ]
@@ -230,7 +230,7 @@ if ok:
         if key == "parametres":
             continue
         with tab_by_key[key]:
-            if key == "reseau":
+            if key == "chroniques":
                 tab_reseau.render(chronicles)
             elif key == "analyse":
                 freq = tab_analyse.render(
@@ -263,3 +263,7 @@ if ok:
                     distance=distance,
                     Area=Area,
                 )
+            elif key == "interpretation":
+                tab_interpretation.render(
+                        
+                    )
