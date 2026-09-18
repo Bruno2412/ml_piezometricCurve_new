@@ -194,9 +194,9 @@ class TestAllowedPages:
 
     def test_only_explicitly_checked_pages_are_allowed(self):
         user = _user(permissions.USER, company_id="acme") | {
-            "pages": {"reseau": True, "analyse": True, "carte": False, "twin": False}
+            "pages": {"chroniques": True, "analyse": True, "carte": False, "twin": False}
         }
-        assert permissions.allowed_pages(user) == {"reseau", "analyse"}
+        assert permissions.allowed_pages(user) == {"chroniques", "analyse"}
 
     def test_empty_pages_dict_means_nothing_allowed(self):
         user = _user(permissions.USER, company_id="acme") | {"pages": {}}
@@ -206,12 +206,12 @@ class TestAllowedPages:
         # Digital Twin réutilise le résultat de fréquence calculé par
         # l'onglet Analyse : il n'a pas de sens seul.
         user = _user(permissions.USER, company_id="acme") | {
-            "pages": {"reseau": False, "analyse": False, "carte": False, "twin": True}
+            "pages": {"chroniques": False, "analyse": False, "carte": False, "twin": True}
         }
         assert "twin" not in permissions.allowed_pages(user)
 
     def test_twin_is_kept_when_analyse_is_also_allowed(self):
         user = _user(permissions.USER, company_id="acme") | {
-            "pages": {"reseau": False, "analyse": True, "carte": False, "twin": True}
+            "pages": {"chroniques": False, "analyse": True, "carte": False, "twin": True}
         }
         assert permissions.allowed_pages(user) == {"analyse", "twin"}

@@ -138,13 +138,14 @@ def assignable_pages(actor: dict) -> set:
 # l'onglet "analyse" : il n'a donc de sens que si "analyse" est aussi
 # autorisé (voir allowed_pages, qui applique cette dépendance).
 
-PAGE_KEYS = ("reseau", "analyse", "carte", "twin")
+PAGE_KEYS = ("chroniques", "analyse", "carte", "twin", "interpetations")
 
 PAGE_LABELS = {
-    "reseau": "Réseau",
+    "chroniques": "Chroniques",
     "analyse": "Analyse & Prévision",
     "carte": "Carte Piézométrique",
     "twin": "Digital Twin",
+    "interpretation": "Interprétation hydrogéologique"
 }
 
 
