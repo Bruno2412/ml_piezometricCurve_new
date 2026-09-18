@@ -42,6 +42,7 @@ if st.session_state.data_ready:
             ("analyse", "Analyse & Prévision"),
             ("carte", "Carte Piézométrique"),
             ("twin", "Digital Twin"),
+            ("interprétation", "Interprétation hydrogéologique"),
         )
         if spec[0] in allowed
     ]
