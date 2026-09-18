@@ -21,7 +21,7 @@ from piezo_app.components import login
 from piezo_app.components.mpl_theme import apply_mpl_theme
 
 st.set_page_config(
-    page_title="Expert Piézométrie Pro",
+    page_title="Piézométrie",
     layout="wide",
 )
 
@@ -128,6 +128,24 @@ pages = [
         "src/piezo_app/app_pages/analyse.py",
         title="Analyse & Prévision",
         icon="💧",
+        default=True,
+    ),
+]
+
+pages = [
+    st.Page(
+        "",
+        title="Cartographie",
+        icon=":material/map:",
+        default=True,
+    ),
+]
+
+pages = [
+    st.Page(
+        "",
+        title="Rapport",
+        icon=":material/assessment:",
         default=True,
     ),
 ]
