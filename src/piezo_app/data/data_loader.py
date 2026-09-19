@@ -11,8 +11,8 @@ import tempfile
 import pandas as pd
 import streamlit as st
 
-from piezo_app import piezo_core as core
-
+# from piezo_app import piezo_core as core
+from piezo_app.services import piezo_core as core
 
 def _parse_from_bytes(file_bytes: bytes, parse_fn):
     """Écrit `file_bytes` dans un fichier temporaire .txt puis appelle

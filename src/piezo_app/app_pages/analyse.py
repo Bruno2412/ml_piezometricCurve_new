@@ -5,12 +5,49 @@ Page « Analyse & Prévision » — le cœur de l'application.
 
 import streamlit as st
 
-from piezo_app import piezo_core as core
-from piezo_app.auth import permissions
-from piezo_app.components import tab_analyse, tab_carte, tab_chroniques, tab_twin, tab_interpretation
-from piezo_app.data.data_loader import load_chroniques_auto, load_descriptif, load_masses_eau
+# ---------------------------------------------------------
+# Imports de l'application — protégés pour que la cause d'un échec
+# (module déplacé, fichier manquant, erreur de syntaxe dans un onglet)
+# s'affiche à l'écran au lieu d'une page blanche.
+#
+# piezo_core doit être importé depuis le MÊME chemin dans tous les
+# fichiers (analyse.py, tab_*.py, carto.py, rapport.py) : sinon Python
+# charge deux modules distincts, ou l'un des imports échoue.
+# ---------------------------------------------------------
+try:
+    from piezo_app.services import piezo_core as core
+    from piezo_app.auth import permissions
+    from piezo_app.components import (
+        tab_analyse,
+        tab_carte,
+        tab_chroniques,
+        tab_interpretation,
+        tab_twin,
+    )
+    from piezo_app.data.data_loader import (
+        load_chroniques_auto,
+        load_descriptif,
+        load_masses_eau,
+    )
+except Exception as exc:
+    st.error("Échec d'import d'un module de l'application.")
+    st.exception(exc)
+    st.stop()
 
-st.title("Piézométrie - Digital Twin - ...")
+
+def _safe(label, fn, *args, **kwargs):
+    """Exécute le rendu d'un onglet ; en cas d'exception, affiche l'erreur
+    dans cet onglet sans empêcher le rendu des suivants. Retourne le
+    résultat de fn, ou None en cas d'erreur."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        st.error(f"L'onglet « {label} » a rencontré une erreur.")
+        st.exception(exc)
+        return None
+
+
+st.title("Piézométrie — Digital Twin")
 
 # ---------------------------------------------------------
 # Permissions de l'utilisateur
@@ -30,29 +67,29 @@ if not allowed:
 # été chargées et validées avec succès (data_ready), et filtrés selon
 # les permissions de l'utilisateur (allowed). Tant que ce n'est pas le
 # cas, seul "Paramètres" est affiché.
+#
+# Clés, libellés et ordre viennent de permissions.PAGE_KEYS / PAGE_LABELS
+# (source unique de vérité) : un nouvel onglet s'y déclare une seule fois.
 # ---------------------------------------------------------
 if "data_ready" not in st.session_state:
     st.session_state.data_ready = False
 
+tab_specs = [("parametres", "Paramètres")]
+
 if st.session_state.data_ready:
-    tab_specs = [("parametres", "Paramètres")] + [
-        spec
-        for spec in (
-            ("chroniques", "Chroniques"),
-            ("analyse", "Analyse & Prévision"),
-            ("carte", "Carte Piézométrique"),
-            ("twin", "Digital Twin"),
-            ("interpretation", "Interprétation"),
-        )
-        if spec[0] in allowed
+    tab_specs += [
+        (key, permissions.PAGE_LABELS[key])
+        for key in permissions.PAGE_KEYS
+        if key in allowed
     ]
-else:
-    tab_specs = [("parametres", "Paramètres")]
 
 tabs = st.tabs([label for _, label in tab_specs])
 tab_by_key = dict(zip((key for key, _ in tab_specs), tabs))
 
 # ── Paramètres ────────────────────────────────────────────────────────
+# Chaque widget a une key explicite : son état ne dépend plus de sa
+# position dans la page, ce qui évite les réinitialisations lorsque la
+# barre d'onglets est reconstruite (data_ready qui change).
 with tab_by_key["parametres"]:
     st.header("Chroniques (3 points — même masse d'eau)")
     uploaded_files = st.file_uploader(
@@ -60,25 +97,34 @@ with tab_by_key["parametres"]:
         "MassesEau.txt (ou un Excel de chroniques déjà préparé)",
         type=["xlsx", "xls", "txt"],
         accept_multiple_files=True,
+        key="upl_files",
     )
-    model_name = st.selectbox("Modèle", ["ETS", "ARIMA", "RandomForest", "XGBoost"])
+    model_name = st.selectbox(
+        "Modèle", ["ETS", "ARIMA", "RandomForest", "XGBoost"], key="model_name"
+    )
     if model_name == "ETS":
         st.caption("ETS = univarié (chronique cible seule).")
     else:
         st.caption("Exploite les 3 chroniques (covariables).")
 
-    future_years = st.number_input("Années futures", value=5, min_value=1)
-    validation_years = st.number_input("Années validation", value=5, min_value=1)
-    ci_pct = st.slider("Intervalle de confiance (%)", 50, 99, 68)
-    n_bootstraps = st.number_input("Bootstraps (RF/XGB)", value=200, min_value=10)
+    future_years = st.number_input(
+        "Années futures", value=5, min_value=1, key="future_years"
+    )
+    validation_years = st.number_input(
+        "Années validation", value=5, min_value=1, key="validation_years"
+    )
+    ci_pct = st.slider("Intervalle de confiance (%)", 50, 99, 68, key="ci_pct")
+    n_bootstraps = st.number_input(
+        "Bootstraps (RF/XGB)", value=200, min_value=10, key="n_bootstraps"
+    )
 
     st.header("Recharge Maîtrisée")
-    thickness = st.number_input("Épaisseur Aquifère (m)", value=10.0)
-    Q = st.number_input("Débit injecté (m³/jour)", value=0.0)
-    S = st.number_input("Coeff. Emmagasinement (S)", value=0.05, format="%.4f")
-    Area = st.number_input("Surface de l'ouvrage (m²)", value=100.0)
-    distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0)
-    K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f")
+    thickness = st.number_input("Épaisseur Aquifère (m)", value=10.0, key="thickness")
+    Q = st.number_input("Débit injecté (m³/jour)", value=0.0, key="Q")
+    S = st.number_input("Coeff. Emmagasinement (S)", value=0.05, format="%.4f", key="S")
+    Area = st.number_input("Surface de l'ouvrage (m²)", value=100.0, key="Area")
+    distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0, key="distance")
+    K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f", key="K")
 
 # ── Extraction des fichiers uploadés ──────────────────────────────────
 excel_file, chroniques_file, descriptif_file, masses_eau_file = None, None, None, None
@@ -158,19 +204,23 @@ if chroniques_file is not None or excel_file is not None:
         if points:
             with tab_by_key["parametres"]:
                 selection = st.multiselect(
-                    "Points piézométriques (3 minimum)",
+                    "Points piézométriques (3 points)",
                     options=points,
                     default=points[: min(3, len(points))],
+                    max_selections=3,
+                    key="selection",
                 )
                 if len(selection) < 3:
                     st.warning(
-                        f"Veuillez sélectionner au moins 3 points "
+                        f"Veuillez sélectionner 3 points "
                         f"({len(selection)} actuellement sélectionné(s))."
                     )
 
             if len(selection) >= 3:
                 with tab_by_key["parametres"]:
-                    target_name = st.selectbox("Piézomètre à prévoir", selection)
+                    target_name = st.selectbox(
+                        "Piézomètre à prévoir", selection, key="target_name"
+                    )
 
                 chronicles = {}
                 ok = True
@@ -224,17 +274,25 @@ if ok != previous_ready:
     st.rerun()
 
 # ── Affichage du contenu des onglets métier ───────────────────────────
+# Chaque onglet est isolé par _safe : une erreur dans l'un n'empêche plus
+# le rendu des suivants. L'ordre d'exécution suit permissions.PAGE_KEYS,
+# donc "analyse" (qui produit freq) s'exécute toujours avant "twin" et
+# "interpretation" (qui le consomment).
 if ok:
     freq = None
-    for key, _label in tab_specs:
+
+    for key, label in tab_specs:
         if key == "parametres":
             continue
+
         with tab_by_key[key]:
             if key == "chroniques":
-                tab_chroniques.render(chronicles)
-                
+                _safe(label, tab_chroniques.render, chronicles)
+
             elif key == "analyse":
-                freq = tab_analyse.render(
+                freq = _safe(
+                    label,
+                    tab_analyse.render,
                     chronicles=chronicles,
                     selection=selection,
                     target_name=target_name,
@@ -244,14 +302,29 @@ if ok:
                     ci_pct=ci_pct,
                     n_bootstraps=n_bootstraps,
                 )
+
             elif key == "carte":
-                tab_carte.render(
+                _safe(
+                    label,
+                    tab_carte.render,
                     selection=selection,
                     chronicles=chronicles,
                     coords_dict=coords_dict,
                 )
-            elif key == "twin":
-                tab_twin.render(
+
+            elif key in ("twin", "interpretation"):
+                if freq is None:
+                    st.info(
+                        "Cet onglet nécessite le résultat de « "
+                        f"{permissions.PAGE_LABELS['analyse']} » : "
+                        "vérifiez que cet onglet s'est exécuté sans erreur."
+                    )
+                    continue
+
+                module = tab_twin if key == "twin" else tab_interpretation
+                _safe(
+                    label,
+                    module.render,
                     chronicles=chronicles,
                     selection=selection,
                     target_name=target_name,
@@ -264,17 +337,3 @@ if ok:
                     distance=distance,
                     Area=Area,
                 )
-            elif key == "interpretation":
-                tab_interpretation.render(
-                    chronicles=chronicles,
-                    selection=selection,
-                    target_name=target_name,
-                    freq=freq,
-                    ok=ok,
-                    Q=Q,
-                    S=S,
-                    K=K,
-                    thickness=thickness,
-                    distance=distance,
-                    Area=Area,
-                    )

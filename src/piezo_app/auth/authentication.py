@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Sep 18 14:37:29 2026
-
-@author: bruno
-"""
-# -*- coding: utf-8 -*-
-"""
 auth/authentication.py — Connexion à Firebase Authentication et gestion
 des comptes.
 
@@ -31,6 +25,13 @@ Cache / ressources :
     utilisateurs.
   - authenticate() n'est jamais cachée : elle manipule des mots de passe,
     des tokens et l'état courant du compte.
+
+Session :
+  - Les claims (rôle, société, pages) sont copiés dans st.session_state.user
+    au login. refresh_session_user() permet de les relire depuis Firebase
+    en cours de session (appelée, avec un throttle, par apps_streamlit.py),
+    afin qu'un changement de droits ou une désactivation soit pris en
+    compte sans attendre une reconnexion.
 """
 
 import requests
@@ -216,6 +217,52 @@ def authenticate(
 
 
 # ============================================================================
+# RAFRAÎCHISSEMENT DE LA SESSION
+# ============================================================================
+
+def refresh_session_user(user: dict) -> dict | None:
+    """
+    Relit rôle, société et pages depuis Firebase pour un utilisateur déjà
+    connecté, sans redemander le mot de passe.
+
+    Retourne :
+        - un dict utilisateur à jour (mêmes clés que authenticate()) ;
+        - None si le compte n'existe plus, est désactivé ou n'a plus de
+          rôle : l'appelant doit alors déconnecter l'utilisateur.
+
+    En cas d'erreur réseau ou Firebase transitoire, la session existante
+    est conservée telle quelle (on ne déconnecte pas quelqu'un à cause
+    d'un incident réseau passager).
+
+    IMPORTANT :
+    Cette fonction ne doit jamais être mise en cache.
+    """
+
+    try:
+        record = fb_auth.get_user(user["uid"])
+
+    except fb_auth.UserNotFoundError:
+        return None
+
+    except Exception:
+        return user
+
+    claims = record.custom_claims or {}
+
+    if record.disabled or claims.get("role") is None:
+        return None
+
+    return {
+        **user,
+        "email": record.email,
+        "role": claims["role"],
+        "company_id": claims.get("company_id"),
+        "company_name": claims.get("company_name"),
+        "pages": claims.get("pages"),
+    }
+
+
+# ============================================================================
 # CACHE DES UTILISATEURS FIREBASE
 # ============================================================================
 
@@ -260,6 +307,17 @@ def _fetch_all_users_raw():
     return result
 
 
+def invalidate_users_cache():
+    """
+    Invalide le cache du listing Firebase.
+
+    À appeler après toute écriture de claims ou toute création /
+    suppression de compte faite hors de ce module (ex. auth/registration.py).
+    """
+
+    _fetch_all_users_raw.clear()
+
+
 # ============================================================================
 # LISTE DES UTILISATEURS
 # ============================================================================
@@ -274,12 +332,9 @@ def list_users(current_user: dict):
     systématiquement réévaluées.
     """
 
-    role = current_user["role"]
+    role = current_user.get("role")
 
-    if role not in (
-        "global_master",
-        "company_master",
-    ):
+    if role not in permissions.ADMIN_ROLES:
         raise PermissionError(
             "Droits insuffisants pour lister les utilisateurs."
         )
@@ -290,8 +345,8 @@ def list_users(current_user: dict):
         if user["role"] is not None
     ]
 
-    if role == "company_master":
-        company_id = current_user["company_id"]
+    if role == permissions.COMPANY_MASTER:
+        company_id = current_user.get("company_id")
 
         result = [
             user
@@ -319,7 +374,7 @@ def create_user(
     """
 
     if (
-        role == "company_master"
+        role == permissions.COMPANY_MASTER
         and not permissions.can_assign_company_master(current_user)
     ):
         raise PermissionError(
@@ -332,7 +387,7 @@ def create_user(
         company_id,
     ):
         raise PermissionError(
-            f"Le rôle '{current_user['role']}' ne peut pas créer "
+            f"Le rôle '{current_user.get('role')}' ne peut pas créer "
             f"un compte '{role}'"
             + (
                 f" pour la société '{company_id}'."
@@ -341,13 +396,13 @@ def create_user(
             )
         )
 
-    if role == "global_master" and company_id is not None:
+    if role == permissions.GLOBAL_MASTER and company_id is not None:
         raise ValueError(
             "Un global_master ne doit pas être rattaché à une société."
         )
 
     if (
-        role in ("company_master", "user")
+        role in (permissions.COMPANY_MASTER, permissions.USER)
         and company_id is None
     ):
         raise ValueError(
@@ -367,10 +422,21 @@ def create_user(
         claims["company_id"] = company_id
         claims["company_name"] = company_name
 
-    fb_auth.set_custom_user_claims(
-        user_record.uid,
-        claims,
-    )
+    try:
+        fb_auth.set_custom_user_claims(
+            user_record.uid,
+            claims,
+        )
+
+    except Exception:
+        # Sans rôle, le compte serait invisible dans l'admin (voir
+        # list_users) tout en bloquant l'adresse email : on le supprime
+        # pour ne pas laisser de compte orphelin.
+        try:
+            fb_auth.delete_user(user_record.uid)
+        except Exception:
+            pass
+        raise
 
     # Le listing Firebase est désormais périmé.
     _fetch_all_users_raw.clear()
@@ -431,13 +497,13 @@ def set_user_role(
             "Droits insuffisants pour modifier ce compte."
         )
 
-    if new_role == "global_master":
+    if new_role == permissions.GLOBAL_MASTER:
         raise PermissionError(
             "Le rôle global_master ne peut pas être attribué depuis cet écran."
         )
 
     if (
-        new_role == "company_master"
+        new_role == permissions.COMPANY_MASTER
         and not permissions.can_assign_company_master(current_user)
     ):
         raise PermissionError(
@@ -462,12 +528,12 @@ def set_user_role(
         target_company_id,
     ):
         raise PermissionError(
-            f"Le rôle '{current_user['role']}' ne peut pas attribuer "
+            f"Le rôle '{current_user.get('role')}' ne peut pas attribuer "
             f"le rôle '{new_role}' à cette société."
         )
 
     if (
-        new_role in ("company_master", "user")
+        new_role in (permissions.COMPANY_MASTER, permissions.USER)
         and target_company_id is None
     ):
         raise ValueError(
@@ -505,6 +571,11 @@ def set_user_pages(
 
     Un company_master ne peut accorder à ses users que les pages
     auxquelles il a lui-même accès.
+
+    Les pages sont normalisées avant écriture (permissions.normalize_pages) :
+    toutes les PAGE_KEYS sont écrites, et "twin" / "interpretation" sont
+    forcées à False si "analyse" n'est pas accordée. Ce qui est stocké
+    dans Firebase correspond donc exactement à ce qui sera effectif.
     """
 
     if not permissions.can_modify_target(
@@ -515,12 +586,14 @@ def set_user_pages(
             "Droits insuffisants pour modifier les pages de ce compte."
         )
 
+    normalized = permissions.normalize_pages(pages)
+
     grantable = permissions.assignable_pages(current_user)
 
     requested = {
         key
-        for key in permissions.PAGE_KEYS
-        if pages.get(key, False)
+        for key, granted in normalized.items()
+        if granted
     }
 
     if not requested.issubset(grantable):
@@ -533,10 +606,7 @@ def set_user_pages(
         fb_auth.get_user(target["uid"]).custom_claims or {}
     )
 
-    existing_claims["pages"] = {
-        key: bool(pages.get(key, False))
-        for key in permissions.PAGE_KEYS
-    }
+    existing_claims["pages"] = normalized
 
     fb_auth.set_custom_user_claims(
         target["uid"],
@@ -580,4 +650,3 @@ def list_companies():
         companies.values(),
         key=lambda company: company["company_name"].lower(),
     )
-

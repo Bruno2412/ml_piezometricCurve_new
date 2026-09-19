@@ -7,8 +7,8 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 
-from piezo_app import piezo_core as core
-
+# from piezo_app import piezo_core as core
+from piezo_app.services import piezo_core as core
 
 def render(selection, chronicles, coords_dict):
     st.subheader("Carte piézométrique évolutive")

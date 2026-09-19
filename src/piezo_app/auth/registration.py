@@ -21,15 +21,17 @@ Flux :
        approved=True, disabled=False, pages autorisées enregistrées.
     8. Un email de confirmation d'activation est envoyé à
        l'utilisateur.
-"""
 
-from urllib.parse import quote
+Toute écriture de claims invalide le cache du listing des utilisateurs
+(authentication.invalidate_users_cache), sinon l'écran d'administration
+afficherait des données périmées jusqu'à 120 secondes.
+"""
 
 import streamlit as st
 from firebase_admin import auth as fb_auth
 from firebase_admin.auth import ActionCodeSettings
 
-from piezo_app.auth import permissions
+from piezo_app.auth import authentication, permissions
 from piezo_app.services.email_service import (
     send_account_activation_email,
     send_admin_notification_email,
@@ -59,6 +61,11 @@ def register_user(
     d'envoi n'empêche pas la création du compte, qui reste de toute
     façon bloqué (disabled=True) jusqu'à validation manuelle par un
     administrateur.
+
+    ⚠ company_id / company_name sont saisis librement par la personne qui
+    s'inscrit : l'administrateur doit les vérifier avant d'activer le
+    compte (un company_id existant donnerait accès aux données de cette
+    société).
     """
 
     email = email.strip().lower()
@@ -101,7 +108,7 @@ def register_user(
             "company_id": company_id,
             "company_name": company_name,
             "approved": False,
-            "pages": {key: False for key in permissions.PAGE_KEYS},
+            "pages": permissions.normalize_pages({}),
         }
 
         fb_auth.set_custom_user_claims(
@@ -121,6 +128,9 @@ def register_user(
 
         raise
 
+    # Le listing Firebase (écran d'administration) est désormais périmé.
+    authentication.invalidate_users_cache()
+
     # ---------------------------------------------------------
     # Envoi de l'email de vérification
     # ---------------------------------------------------------
@@ -129,14 +139,15 @@ def register_user(
     # appli avec le oobCode en paramètre, plutôt que de valider
     # l'email dès le chargement de sa page générique. La validation
     # elle-même n'a lieu qu'au clic sur le bouton "Confirmer mon
-    # email" côté app_streamlit.py (voir le bloc `action ==
+    # email" côté apps_streamlit.py (voir le bloc `action ==
     # "email_verified"` qui appelle l'API accounts:update avec ce
-    # code).
+    # code). L'adresse n'est volontairement PAS placée dans l'URL :
+    # apps_streamlit.py utilise l'email renvoyé par Firebase.
     #
     try:
         app_url = st.secrets.get("app", {}).get("base_url", "http://localhost:8501")
         action_code_settings = ActionCodeSettings(
-            url=f"{app_url}/?action=email_verified&email={quote(email)}",
+            url=f"{app_url}/?action=email_verified",
             handle_code_in_app=True,
         )
         link = fb_auth.generate_email_verification_link(email, action_code_settings)
@@ -151,11 +162,15 @@ def notify_admins_of_email_confirmation(email: str) -> None:
     """
     Envoie une notification aux administrateurs (global_master) lorsque
     l'email d'un utilisateur inscrit vient d'être confirmé (après clic
-    réel sur le bouton "Confirmer mon email", voir app_streamlit.py).
+    réel sur le bouton "Confirmer mon email", voir apps_streamlit.py).
 
     Idempotent : un custom claim `admin_notified` est posé sur le compte
     après le premier envoi, pour ne jamais notifier deux fois pour le
     même compte (ex. si la page est rechargée après confirmation).
+
+    Le claim n'est posé que si une notification a réellement été envoyée :
+    s'il n'existe encore aucun administrateur, la notification sera
+    retentée à la prochaine confirmation.
     """
     try:
         user_record = fb_auth.get_user_by_email(email)
@@ -170,25 +185,34 @@ def notify_admins_of_email_confirmation(email: str) -> None:
     admin_emails = [
         u.email
         for u in fb_auth.list_users().iterate_all()
-        if (u.custom_claims or {}).get("role") == permissions.GLOBAL_MASTER
+        if u.email and (u.custom_claims or {}).get("role") == permissions.GLOBAL_MASTER
     ]
 
-    if admin_emails:
-        send_admin_notification_email(
-            admin_emails,
-            new_user_email=email,
-            company_name=claims.get("company_name", ""),
-        )
+    if not admin_emails:
+        return
 
-    claims["admin_notified"] = True
-    fb_auth.set_custom_user_claims(user_record.uid, claims)
+    send_admin_notification_email(
+        admin_emails,
+        new_user_email=email,
+        company_name=claims.get("company_name", ""),
+    )
+
+    # Les claims sont relus juste avant l'écriture : entre-temps (la
+    # liste des comptes peut être longue à parcourir), un administrateur
+    # a pu activer ce compte ou modifier ses pages, et set_custom_user_claims
+    # remplace l'ensemble des claims — on ne doit pas écraser ce changement.
+    fresh_claims = fb_auth.get_user(user_record.uid).custom_claims or {}
+    fresh_claims["admin_notified"] = True
+    fb_auth.set_custom_user_claims(user_record.uid, fresh_claims)
+
+    authentication.invalidate_users_cache()
 
 
 def activate_user(
     current_user: dict,
     target: dict,
     pages: dict,
-) -> None:
+) -> bool:
     """
     Valide et active un utilisateur.
 
@@ -197,15 +221,22 @@ def activate_user(
     Lors de l'activation :
         - approved = True
         - disabled = False
-        - les pages sélectionnées sont enregistrées
-        - un email de confirmation est envoyé à l'utilisateur
+        - les pages sélectionnées sont enregistrées (normalisées : sans
+          « Analyse & Prévision », le Digital Twin et l'Interprétation
+          sont refusés)
+        - un email de confirmation est envoyé à l'utilisateur, en
+          best-effort
+
+    Retourne True si l'email d'activation a été envoyé, False sinon
+    (le compte est alors quand même activé : l'administrateur peut
+    prévenir la personne autrement).
     """
 
     # ---------------------------------------------------------
     # Vérification des droits
     # ---------------------------------------------------------
 
-    if current_user["role"] != permissions.GLOBAL_MASTER:
+    if current_user.get("role") != permissions.GLOBAL_MASTER:
         raise PermissionError("Seul un global_master peut activer un compte.")
 
     if not permissions.can_modify_target(
@@ -237,10 +268,10 @@ def activate_user(
     claims["approved"] = True
 
     # ---------------------------------------------------------
-    # Attribution des pages
+    # Attribution des pages (même normalisation que set_user_pages)
     # ---------------------------------------------------------
 
-    claims["pages"] = {key: bool(pages.get(key, False)) for key in permissions.PAGE_KEYS}
+    claims["pages"] = permissions.normalize_pages(pages)
 
     # ---------------------------------------------------------
     # Enregistrement des claims
@@ -260,11 +291,21 @@ def activate_user(
         disabled=False,
     )
 
+    # Le listing Firebase (écran d'administration) est désormais périmé.
+    authentication.invalidate_users_cache()
+
     # ---------------------------------------------------------
-    # Notification de l'utilisateur
+    # Notification de l'utilisateur (best-effort : le compte est déjà
+    # activé, un échec d'envoi ne doit pas faire croire le contraire)
     # ---------------------------------------------------------
 
-    send_account_activation_email(
-        user_record.email,
-        claims["pages"],
-    )
+    try:
+        send_account_activation_email(
+            user_record.email,
+            claims["pages"],
+        )
+    except Exception as e:
+        print(f"Échec d'envoi de l'email d'activation pour {user_record.email} : {e}")
+        return False
+
+    return True
