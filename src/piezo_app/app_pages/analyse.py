@@ -321,19 +321,35 @@ if ok:
                     )
                     continue
 
-                module = tab_twin if key == "twin" else tab_interpretation
-                _safe(
-                    label,
-                    module.render,
-                    chronicles=chronicles,
-                    selection=selection,
-                    target_name=target_name,
-                    freq=freq,
-                    ok=ok,
-                    Q=Q,
-                    S=S,
-                    K=K,
-                    thickness=thickness,
-                    distance=distance,
-                    Area=Area,
-                )
+                if key == "twin":
+                    _safe(
+                        label,
+                        tab_twin.render,
+                        chronicles=chronicles,
+                        selection=selection,
+                        target_name=target_name,
+                        freq=freq,
+                        ok=ok,
+                        Q=Q,
+                        S=S,
+                        K=K,
+                        thickness=thickness,
+                        distance=distance,
+                        Area=Area,
+                    )
+                else:
+                    _safe(
+                        label,
+                        tab_interpretation.render,
+                        chronicles=chronicles,
+                        selection=selection,
+                        target_name=target_name,
+                        freq=freq,
+                        coords_dict=coords_dict,
+                        Q=Q,
+                        S=S,
+                        K=K,
+                        thickness=thickness,
+                        distance=distance,
+                        Area=Area,
+                    )

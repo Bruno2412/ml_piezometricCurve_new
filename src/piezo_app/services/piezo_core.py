@@ -218,7 +218,7 @@ def calculate_spatial_impact(Q, S, K, thickness, distance, time_days, Area):
     if time_days <= 0 or S <= 0 or K <= 0 or thickness <= 0:
         return 0
     R_bassin = np.sqrt(Area / np.pi)
-    T = K * thickness
+    T = K * 86400.0 *  thickness
     if distance <= R_bassin:
         impact = (Q / (Area * S)) * (1 - np.exp(-time_days / 10))
     else:
@@ -260,7 +260,7 @@ def draw_nappe_2d_figure(Q, S, K, thickness, distance, time_days, Area, niveau_b
     X, Y = np.meshgrid(x, y)
     R = np.maximum(np.sqrt(X**2 + Y**2), 1e-3)
 
-    T = K * thickness
+    T = K * 86400.0 * thickness
     impact_grid = np.zeros_like(R)
     if T > 0 and S > 0 and time_days > 0 and Q > 0:
         u = (R**2 * S) / (4 * T * time_days)

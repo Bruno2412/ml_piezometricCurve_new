@@ -49,6 +49,10 @@ def render(
     Retourne None si l'analyse n'a pas pu aboutir (l'erreur est alors
     affichée dans l'onglet)."""
 
+    # Les résultats d'une exécution précédente ne doivent jamais servir à
+    # l'onglet Interprétation si celle-ci échoue.
+    st.session_state.pop("analysis_raw", None)
+
     # --- 1. Identification de la chronique cible ---
     if target_name not in selection:
         return _fail(f"❌ Le piézomètre « {target_name} » ne fait pas partie de la sélection.")
@@ -141,6 +145,24 @@ def render(
             )
     except Exception as e:
         return _fail(f"❌ Erreur dans fit_predict() pour les prévisions futures : {e}", e)
+
+    # --- Résultats bruts pour l'onglet Interprétation (synthèse par l'IA) ---
+    st.session_state["analysis_raw"] = {
+        "target": target_name,
+        "model_name": model_name,
+        "ci_pct": ci_pct,
+        "validation_years": validation_years,
+        "future_years": future_years,
+        "y_train": df_train["level"].to_numpy(dtype=float),
+        "y_val": df_val["level"].to_numpy(dtype=float),
+        "p_val": p_val,
+        "lo_val": lo_v,
+        "hi_val": hi_v,
+        "fut_dates": fut_dates,
+        "p_fut": p_fut,
+        "lo_fut": lo_f,
+        "hi_fut": hi_f,
+    }
 
     # --- 11. Construction du graphique ---
     # Figure() plutôt que plt.subplots() : pas d'état global pyplot partagé
