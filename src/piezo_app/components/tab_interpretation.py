@@ -24,6 +24,7 @@ import streamlit as st
 
 from piezo_app.services import interpretation_digest as digest_lib
 from piezo_app.services import llm_client
+from piezo_app.services import interpretation_docx
 
 _DEFAULT_MODEL = "mistral-small-latest"
 _DEFAULT_MAX_CALLS = 10
@@ -213,10 +214,52 @@ def render(
         "l'avis d'un hydrogéologue."
     )
     safe_target = re.sub(r"[^A-Za-z0-9_-]+", "_", str(target_name))[:40] or "point"
-    st.download_button(
-        "Télécharger (Markdown)",
-        result["text"].encode("utf-8"),
-        file_name=f"interpretation_{safe_target}.md",
-        mime="text/markdown",
-        key="interp_download",
-    )
+
+    col_md, col_docx = st.columns(2)
+    with col_md:
+        st.download_button(
+            "Télécharger (Markdown)",
+            result["text"].encode("utf-8"),
+            file_name=f"interpretation_{safe_target}.md",
+            mime="text/markdown",
+            key="interp_download_md",
+        )
+    with col_docx:
+        # Chemin du modèle Word de l'entreprise (facultatif) :
+        #     [word_template]
+        #     path = "templates/rapport_acme.docx"
+        # Chemin relatif à la racine du projet (là où app_streamlit.py est
+        # lancé). Sans cette section dans les secrets, un document vierge
+        # est généré, comme avant.
+        template_path = st.secrets.get("word_template", {}).get("path")
+        try:
+            docx_bytes = interpretation_docx.build_docx_bytes(
+                markdown_text=result["text"],
+                target_name=target_name,
+                model=result["model"],
+                template_path=template_path,
+            )
+        except FileNotFoundError:
+            st.warning(
+                f"Modèle Word introuvable ({template_path}) : export au format "
+                "standard, sans en-tête ni logo. Vérifiez le chemin dans les secrets."
+            )
+            docx_bytes = interpretation_docx.build_docx_bytes(
+                markdown_text=result["text"], target_name=target_name, model=result["model"],
+            )
+        except ImportError:
+            st.caption(
+                "Export Word indisponible : le paquet 'python-docx' n'est "
+                "pas installé (ajoutez-le à pyproject.toml)."
+            )
+        else:
+            st.download_button(
+                "Télécharger (Word)",
+                docx_bytes,
+                file_name=f"interpretation_{safe_target}.docx",
+                mime=(
+                    "application/vnd.openxmlformats-officedocument"
+                    ".wordprocessingml.document"
+                ),
+                key="interp_download_docx",
+            )
