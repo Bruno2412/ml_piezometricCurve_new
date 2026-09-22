@@ -91,3 +91,16 @@ def render(selection, chronicles, coords_dict):
         "formé par les points disponibles, et reste une approximation "
         "grossière"
     )
+
+    st.divider()
+    st.checkbox(
+        "Partager ces données avec l'onglet « Cartographie » "
+        "(page indépendante, affichage plein écran)",
+        value=False,
+        key="share_with_cartography",
+        help=(
+            "Une fois coché, la page « Cartographie » affichera ces mêmes "
+            "chroniques et coordonnées, avec une carte en plein écran. "
+            "Décochez pour retirer l'accès."
+        ),
+    )

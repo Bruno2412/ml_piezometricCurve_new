@@ -273,6 +273,32 @@ st.session_state.data_ready = ok
 if ok != previous_ready:
     st.rerun()
 
+# ---------------------------------------------------------
+# Partage avec la page « Cartographie » (app_pages/carto.py), qui s'exécute
+# indépendamment de cette page : sans cet enregistrement dans la session,
+# elle n'aurait aucun moyen de connaître les chroniques et coordonnées
+# chargées ici. Le partage lui-même est décidé par la case à cocher de
+# l'onglet « Carte Piézométrique » (voir components/tab_carte.py,
+# clé "share_with_cartography") : décochée par défaut, donc rien n'est
+# partagé tant que l'utilisateur ne l'a pas explicitement demandé.
+# ---------------------------------------------------------
+# share_with_cartography = st.session_state.get(
+#     "share_with_cartography", 
+#     False)
+
+# if ok and share_with_cartography:
+#     st.session_state["shared_map_data"] = {
+#         "chronicles": chronicles,
+#         "coords_dict": coords_dict,
+#         "selection": selection,
+#         "target_name": target_name,
+#     }
+# elif not share_with_cartography:
+#     # Si l'utilisateur décoche (ou n'a jamais coché), aucune donnée d'une
+#     # précédente analyse ne doit rester accessible depuis la page
+#     # Cartographie : on retire ce qui aurait pu y être laissé.
+#     st.session_state.pop("shared_map_data", None)
+
 # ── Affichage du contenu des onglets métier ───────────────────────────
 # Chaque onglet est isolé par _safe : une erreur dans l'un n'empêche plus
 # le rendu des suivants. L'ordre d'exécution suit permissions.PAGE_KEYS,
@@ -311,6 +337,28 @@ if ok:
                     chronicles=chronicles,
                     coords_dict=coords_dict,
                 )
+                
+                share_with_cartography = st.session_state.get(
+                    "share_with_cartography",
+                    False,
+                )
+                if ok and share_with_cartography:
+                    st.session_state["shared_map_data"] = {
+                        "chronicles": chronicles,
+                        "coords_dict": coords_dict,
+                        "selection": selection,
+                        "target_name": target_name,
+                    }
+                else:
+                    st.session_state.pop(
+                        "shared_map_data",
+                        None,
+                    )
+                
+                
+                
+                
+                
 
             elif key in ("twin", "interpretation"):
                 if freq is None:
