@@ -12,11 +12,13 @@ et une surface interpolée peut être calculée à partir d'au moins 3 points.
 
 import base64
 
+
 import folium
 import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
+from piezo_app.services import ign_carto
 from piezo_app.auth import permissions
 from piezo_app.services import piezo_core as core
 
@@ -90,15 +92,11 @@ if chronicles and coords_dict:
 # ---------------------------------------------------------
 # Position initiale de la carte
 # ---------------------------------------------------------
-#
-# Si des coordonnées sont disponibles :
-#     -> centrage automatique sur les points.
-#
-# Sinon :
-#     -> position par défaut.
-#
-# Cette position pourra être modifiée directement dans Folium.
-# ---------------------------------------------------------
+# Initialisation des variables pour éviter l'erreur si points_with_coords est vide
+commune_cible = None
+communes_voisines = []
+commune_note = None
+
 if points_with_coords:
     lats = [p["lat"] for p in points_with_coords.values()]
     lons = [p["lon"] for p in points_with_coords.values()]
@@ -109,6 +107,22 @@ if points_with_coords:
     ]
 
     zoom_start = 14
+    
+    try:
+        commune_cible = ign_carto.get_commune_at_point(
+            lat=center[0],
+            lon=center[1],
+        )
+    
+        if commune_cible:
+            communes_voisines = ign_carto.get_neighboring_communes(
+                commune_cible
+            )
+    
+    except Exception as exc:
+        commune_note = (
+            f"Informations communales IGN indisponibles : {exc}"
+        )
 
 else:
     # Position par défaut : Lyon
@@ -136,6 +150,51 @@ folium.TileLayer(
     name="Satellite",
     attr="Esri",
 ).add_to(m)
+
+# ---------------------------------------------------------
+# Limites communales
+# ---------------------------------------------------------
+if commune_cible:
+
+    commune_group = folium.FeatureGroup(
+        name="Commune cible",
+        show=True,
+    )
+
+    folium.GeoJson(
+        commune_cible,
+        name=ign_carto.commune_label(commune_cible),
+        style_function=lambda feature: {
+            "color": "#d62728",
+            "weight": 3,
+            "fillOpacity": 0.05,
+        },
+        tooltip=ign_carto.commune_label(commune_cible),
+    ).add_to(commune_group)
+
+    commune_group.add_to(m)
+
+
+if communes_voisines:
+
+    voisins_group = folium.FeatureGroup(
+        name="Communes limitrophes",
+        show=True,
+    )
+
+    for commune in communes_voisines:
+
+        folium.GeoJson(
+            commune,
+            style_function=lambda feature: {
+                "color": "#555555",
+                "weight": 1.5,
+                "fillOpacity": 0.02,
+            },
+            tooltip=ign_carto.commune_label(commune),
+        ).add_to(voisins_group)
+
+    voisins_group.add_to(m)
 
 
 # ---------------------------------------------------------
@@ -246,6 +305,60 @@ if len(points_with_coords) >= 3:
     except Exception as exc:
         surface_note = (
             f"Surface interpolée indisponible : {exc}"
+        )
+
+# ---------------------------------------------------------
+# Cadastre
+# ---------------------------------------------------------
+cadastre_note = None
+
+if commune_cible:
+
+    try:
+
+        communes_cadastre = [
+            commune_cible,
+            *communes_voisines,
+        ]
+
+        cadastre = ign_carto.get_cadastre_for_communes(
+            communes_cadastre
+        )
+
+        if cadastre.get("features"):
+
+            folium.GeoJson(
+                cadastre,
+                name="Cadastre",
+                show=False,
+                style_function=lambda feature: {
+                    "color": "#666666",
+                    "weight": 0.6,
+                    "fillColor": "#ffffff",
+                    "fillOpacity": 0.02,
+                },
+                highlight_function=lambda feature: {
+                    "weight": 2,
+                    "fillOpacity": 0.10,
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=[
+                        "section",
+                        "numero",
+                    ],
+                    aliases=[
+                        "Section",
+                        "Parcelle",
+                    ],
+                    localize=True,
+                    sticky=False,
+                    labels=True,
+                ),
+            ).add_to(m)
+
+    except Exception as exc:
+        cadastre_note = (
+            f"Cadastre indisponible : {exc}"
         )
 
 
