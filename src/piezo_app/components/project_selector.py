@@ -1,58 +1,60 @@
 # -*- coding: utf-8 -*-
-"""Sélecteur de société, visible uniquement pour un global_master.
+"""Sélecteur du projet courant.
 
-Un company_master ou un user reste cantonné à sa propre société (pas de
-sélecteur affiché) ; un global_master choisit ici quelle société il
-regarde, et ce choix est stocké dans st.session_state['viewing_company_id']
-pour le reste du script (voir auth.permissions.effective_company_id).
-
-À appeler juste après login.render_user_badge(), dans la sidebar :
-
-    from components import project_selector
-    project_selector.render()
+Le projet est le contexte racine des données métier de l'application.
+Ce composant affiche les projets auxquels l'utilisateur connecté a accès
+et permet d'ouvrir/fermer le projet courant depuis la sidebar.
 """
 
 import streamlit as st
 
-from piezo_app.auth import authentication, permissions
+from piezo_app.services import projects
 
 
-def render():
-    user = st.session_state.user
-
-    if not permissions.can_switch_company(user):
-        return  # company_master / user : rien à afficher, société fixe
-
-    if "viewing_company_id" not in st.session_state:
-        st.session_state.viewing_company_id = None
-
-    # Les sociétés connues sont déduites des comptes existants (pas de
-    # collection "companies" séparée pour l'instant — simple tant que
-    # le nombre de sociétés reste petit).
-    try:
-        all_users = authentication.list_users(user)
-    except PermissionError:
-        st.sidebar.error("Impossible de charger la liste des sociétés.")
+def render() -> None:
+    """Affiche le projet courant et permet d'en changer."""
+    user = st.session_state.get("user")
+    if not user:
         return
 
-    companies = {}
-    for u in all_users:
-        if u["company_id"]:
-            companies[u["company_id"]] = u["company_name"]
+    available = projects.list_projects(user)
+    current = projects.current_project(user)
 
-    if not companies:
-        st.sidebar.info("Aucune société créée pour l'instant.")
+    st.sidebar.divider()
+    st.sidebar.caption("Projet courant")
+
+    if not available:
+        st.sidebar.info("Aucun projet disponible.")
+        if current is not None:
+            projects.clear_current_project()
         return
 
-    options = list(companies.keys())
-    labels = {cid: companies[cid] for cid in options}
+    ids = [project["id"] for project in available]
+    labels = {
+        project["id"]: project["projectName"] or project["id"]
+        for project in available
+    }
 
+    current_id = current["id"] if current else None
     selected = st.sidebar.selectbox(
-        "Société consultée",
-        options=options,
-        format_func=lambda cid: labels[cid],
-        index=options.index(st.session_state.viewing_company_id)
-        if st.session_state.viewing_company_id in options
-        else 0,
+        "Projet",
+        options=ids,
+        format_func=lambda project_id: labels[project_id],
+        index=ids.index(current_id) if current_id in ids else 0,
+        key="current_project_selector",
     )
-    st.session_state.viewing_company_id = selected
+
+    if selected != current_id:
+        projects.set_current_project(selected, user)
+        st.rerun()
+
+    current = projects.current_project(user)
+    if current:
+        if current.get("projectShare"):
+            st.sidebar.caption("🔗 Partagé avec la société")
+        else:
+            st.sidebar.caption("🔒 Projet privé")
+
+        if st.sidebar.button("Fermer le projet", use_container_width=True):
+            projects.clear_current_project()
+            st.rerun()

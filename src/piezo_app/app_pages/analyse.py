@@ -16,6 +16,7 @@ import streamlit as st
 # ---------------------------------------------------------
 try:
     from piezo_app.services import piezo_core as core
+    from piezo_app.services import projects
     from piezo_app.auth import permissions
     from piezo_app.components import (
         tab_analyse,
@@ -53,6 +54,11 @@ st.title("Piézométrie — Digital Twin")
 # Permissions de l'utilisateur
 # ---------------------------------------------------------
 allowed = permissions.allowed_pages(st.session_state.user)
+
+# Aucun traitement métier ne démarre sans projet courant.
+current_project = projects.require_current_project(st.session_state.user)
+
+st.caption(f"Projet : {current_project['projectName']}")
 
 if not allowed:
     st.warning(

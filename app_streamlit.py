@@ -19,7 +19,8 @@ import requests
 import streamlit as st
 
 from piezo_app.auth import authentication, permissions, registration
-from piezo_app.components import login
+from piezo_app.components import login, project_selector
+from piezo_app.services import projects
 from piezo_app.components.mpl_theme import apply_mpl_theme
 
 st.set_page_config(
@@ -168,35 +169,48 @@ if _now - st.session_state.get("_claims_checked_at", 0.0) > _CLAIMS_REFRESH_EVER
     st.session_state.user = _fresh_user
 
 login.render_user_badge()
+project_selector.render()
 
-allowed = permissions.allowed_pages(st.session_state.user)
+user = st.session_state.user
+current_project = projects.current_project(user)
+allowed = permissions.allowed_pages(user)
 
 
 pages = [
     st.Page(
-        "src/piezo_app/app_pages/analyse.py",
-        title="Analyse & Prévision",
-        icon="💧",
+        "src/piezo_app/app_pages/projets.py",
+        title="Projets",
+        icon="📁",
         default=True,
     ),
 ]
 
-# Cartographie et Rapport ne sont proposés qu'aux comptes disposant d'au
-# moins un droit métier : sans cela, un compte sans aucune permission y
-# accéderait alors que analyse.py lui affiche « aucune fonctionnalité ».
-if allowed:
-    pages += [
+# Les pages métier ne sont proposées qu'après ouverture d'un projet.
+# Le contrôle est également effectué à l'intérieur des pages elles-mêmes
+# pour éviter tout contournement par une navigation directe.
+if current_project is not None:
+    pages.append(
         st.Page(
-            "src/piezo_app/app_pages/carto.py",
-            title="Cartographie",
-            icon=":material/map:",
-        ),
-        st.Page(
-            "src/piezo_app/app_pages/rapport.py",
-            title="Rapport",
-            icon=":material/assessment:",
-        ),
-    ]
+            "src/piezo_app/app_pages/analyse.py",
+            title="Analyse & Prévision",
+            icon="💧",
+            default=True,
+        )
+    )
+
+    if allowed:
+        pages += [
+            st.Page(
+                "src/piezo_app/app_pages/carto.py",
+                title="Cartographie",
+                icon=":material/map:",
+            ),
+            st.Page(
+                "src/piezo_app/app_pages/rapport.py",
+                title="Rapport",
+                icon=":material/assessment:",
+            ),
+        ]
 
 
 # ---------------------------------------------------------

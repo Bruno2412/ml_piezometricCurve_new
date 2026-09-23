@@ -11,6 +11,7 @@ from streamlit_folium import st_folium
 
 from piezo_app.auth import permissions
 from piezo_app.services import ign_carto
+from piezo_app.services import projects
 from piezo_app.services import piezo_core as core
 
 # ---------------------------------------------------------
@@ -45,6 +46,8 @@ if "carte" not in permissions.allowed_pages(user):
         "administrateur pour demander l'attribution de ce droit."
     )
     st.stop()
+
+current_project = projects.require_current_project(user)
 
 st.title("Cartographie piézométrique")
 

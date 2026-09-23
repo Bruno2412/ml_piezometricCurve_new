@@ -10,7 +10,7 @@ la page directement.
 
 Deux onglets :
   - "Comptes" : gestion des comptes de la société actuellement
-    "regardée" (project_selector), visible pour global_master et
+    "regardée" (company_selector), visible pour global_master et
     company_master — c'est l'ancien contenu de cette page.
   - "Vue globale" : tableau de contrôle transverse à toutes les
     sociétés, visible uniquement pour un global_master (onglet même
@@ -20,7 +20,7 @@ Deux onglets :
 import streamlit as st
 
 from piezo_app.auth import permissions
-from piezo_app.components import project_selector, tab_admin, tab_global_overview
+from piezo_app.components import company_selector, tab_admin, tab_global_overview
 
 st.title("🔧 Administration des comptes")
 
@@ -29,7 +29,7 @@ if not permissions.can_administer_users(st.session_state.user):
     st.stop()
 
 with st.sidebar:
-    project_selector.render()
+    company_selector.render()
 
 if permissions.is_global_master(st.session_state.user):
     tab_comptes, tab_vue_globale = st.tabs(["Comptes", "🌍 Vue globale"])
