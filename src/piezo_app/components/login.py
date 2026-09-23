@@ -10,7 +10,6 @@ import streamlit as st
 
 from piezo_app.auth import authentication
 from piezo_app.auth.authentication import EmailNotVerifiedError, PendingApprovalError
-from piezo_app.services import projects
 
 
 def require_login():
@@ -97,7 +96,6 @@ def require_login():
             "viewing_company_id",
             None,
         )
-        projects.clear_current_project()
 
         st.rerun()
 
@@ -137,6 +135,5 @@ def render_user_badge():
             "viewing_company_id",
             None,
         )
-        projects.clear_current_project()
 
         st.rerun()
