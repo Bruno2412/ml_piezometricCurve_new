@@ -194,7 +194,7 @@ if current_project is not None:
             "src/piezo_app/app_pages/analyse.py",
             title="Analyse & Prévision",
             icon="💧",
-            default=True,
+            default=False,
         )
     )
 

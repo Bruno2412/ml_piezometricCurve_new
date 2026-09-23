@@ -19,6 +19,7 @@ from typing import Any
 import streamlit as st
 from firebase_admin import firestore
 
+from piezo_app.auth import authentication 
 
 COLLECTION_NAME = "Projects"
 

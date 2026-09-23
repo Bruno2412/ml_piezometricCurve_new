@@ -22,6 +22,15 @@ Flux :
     8. Un email de confirmation d'activation est envoyé à
        l'utilisateur.
 
+ATTENTION — company_id / company_name sont saisis librement par la
+personne qui s'inscrit (voir register_user ci-dessous) : rien dans le
+code n'empêche de saisir l'identifiant d'une société déjà existante.
+Avant de cliquer sur "Activer" pour un compte, l'administrateur DOIT
+vérifier que la société demandée correspond bien à la personne qui
+s'inscrit — un company_id existant donnerait sinon accès aux données de
+cette société à un tiers. Seul un global_master peut activer un compte
+(voir activate_user) : c'est le point de contrôle humain prévu pour ça.
+
 Toute écriture de claims invalide le cache du listing des utilisateurs
 (authentication.invalidate_users_cache), sinon l'écran d'administration
 afficherait des données périmées jusqu'à 120 secondes.
@@ -216,7 +225,12 @@ def activate_user(
     """
     Valide et active un utilisateur.
 
-    Seul un global_master peut effectuer cette opération.
+    Seul un global_master peut effectuer cette opération — y compris
+    pour un compte rattaché à la société d'un company_master : c'est
+    volontairement un point de contrôle centralisé (voir l'avertissement
+    en tête de ce fichier sur company_id / company_name saisis librement
+    à l'inscription). Un company_master ne peut pas activer lui-même les
+    inscriptions de sa propre société.
 
     Lors de l'activation :
         - approved = True

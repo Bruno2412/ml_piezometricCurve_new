@@ -1,16 +1,22 @@
 # -*- coding: utf-8 -*-
 
 """
-Écran de connexion + gestion de session utilisateur.
-
-Le module ne contient aucune logique métier.
+Écran de connexion et gestion de la session utilisateur.
 """
+
+import logging
 
 import streamlit as st
 
 from piezo_app.auth import authentication
-from piezo_app.auth.authentication import EmailNotVerifiedError, PendingApprovalError
 
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# CONNEXION
+# ============================================================================
 
 def require_login():
     """
@@ -18,21 +24,28 @@ def require_login():
     n'est pas authentifié.
     """
 
+    # ------------------------------------------------------------------
     # Initialisation de la session
+    # ------------------------------------------------------------------
+
     if "user" not in st.session_state:
         st.session_state.user = None
 
+    # ------------------------------------------------------------------
     # Utilisateur déjà connecté
+    # ------------------------------------------------------------------
+
     if st.session_state.user is not None:
         return
 
-    # ---------------------------------------------------------
-    # FORMULAIRE DE CONNEXION
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # FORMULAIRE
+    # ------------------------------------------------------------------
 
     st.title("Connexion — Expert Piézométrie Pro")
 
     with st.form("login_form"):
+
         email = st.text_input(
             "Email",
             placeholder="nom@entreprise.fr",
@@ -48,59 +61,81 @@ def require_login():
             use_container_width=True,
         )
 
+    # ------------------------------------------------------------------
+    # Inscription
+    # ------------------------------------------------------------------
+
     st.page_link(
         "src/piezo_app/app_pages/inscription.py",
         label="Pas encore de compte ? Créer un compte",
         icon="📝",
     )
 
+    # ------------------------------------------------------------------
+    # Traitement de la connexion
+    # ------------------------------------------------------------------
+
     if submitted:
+
+        email = email.strip()
+
         if not email or not password:
-            st.error("Veuillez renseigner votre email et votre mot de passe.")
+            st.error(
+                "Veuillez renseigner votre email et votre mot de passe."
+            )
             st.stop()
 
-        user = None
         with st.spinner("Authentification..."):
+
             try:
                 user = authentication.authenticate(
                     email=email,
                     password=password,
                 )
-            except EmailNotVerifiedError:
-                st.warning(
-                    "Compte non confirmé. Vérifiez votre boîte mail (et vos spams) "
-                    "pour valider votre inscription."
+
+            except Exception:
+                logger.exception(
+                    "Erreur inattendue pendant l'authentification."
                 )
-                st.stop()
-            except PendingApprovalError:
-                st.info(
-                    "Votre compte a été créé mais n'est pas encore activé. "
-                    "Contactez votre administrateur pour obtenir vos accès."
-                )
-                st.stop()
+                user = None
+
+        # --------------------------------------------------------------
+        # Échec
+        # --------------------------------------------------------------
 
         if user is None:
             st.error(
-                "Connexion impossible. Vérifiez vos identifiants ou contactez votre administrateur."
+                "Connexion impossible. Vérifiez vos identifiants ou "
+                "contactez votre administrateur."
             )
             st.stop()
 
-        # -----------------------------------------------------
-        # SESSION UTILISATEUR
-        # -----------------------------------------------------
+        # --------------------------------------------------------------
+        # Connexion réussie
+        # --------------------------------------------------------------
 
         st.session_state.user = user
 
-        # Nettoyage éventuel d'une ancienne société consultée
-        st.session_state.pop(
-            "viewing_company_id",
-            None,
-        )
+        # Nettoyage de quelques éventuelles anciennes données de session.
+        #
+        # On ne fait PAS st.session_state.clear() ici car cela supprimerait
+        # immédiatement la session utilisateur que nous venons de créer.
+        st.session_state.pop("shared_map_data", None)
+        st.session_state.pop("active_project", None)
 
         st.rerun()
 
+    # ------------------------------------------------------------------
+    # Tant que l'utilisateur n'est pas connecté :
+    # arrêt du rendu de l'application.
+    # ------------------------------------------------------------------
+
     st.stop()
 
+
+# ============================================================================
+# BADGE UTILISATEUR
+# ============================================================================
 
 def render_user_badge():
     """
@@ -113,27 +148,33 @@ def render_user_badge():
     if user is None:
         return
 
-    label = f"{user['email']} ({user['role']})"
+    # ------------------------------------------------------------------
+    # Informations utilisateur
+    # ------------------------------------------------------------------
+
+    email = user.get("email", "?")
+    role = user.get("role", "?")
+
+    label = f"{email} ({role})"
 
     if user.get("company_name"):
         label += f" — {user['company_name']}"
 
-    st.sidebar.caption(f"Connecté : {label}")
+    st.sidebar.caption(
+        f"Connecté : {label}"
+    )
+
+    # ------------------------------------------------------------------
+    # Déconnexion
+    # ------------------------------------------------------------------
 
     if st.sidebar.button(
         "Se déconnecter",
         use_container_width=True,
     ):
-        # Suppression de toutes les informations
-        # d'authentification de la session.
-        st.session_state.pop(
-            "user",
-            None,
-        )
 
-        st.session_state.pop(
-            "viewing_company_id",
-            None,
-        )
+        # On vide toute la session afin qu'un autre utilisateur
+        # ne puisse pas récupérer des données du précédent compte.
+        st.session_state.clear()
 
         st.rerun()

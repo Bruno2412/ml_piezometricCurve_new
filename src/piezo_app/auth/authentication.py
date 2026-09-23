@@ -1,38 +1,35 @@
 # -*- coding: utf-8 -*-
 """
-auth/authentication.py — Connexion à Firebase Authentication et gestion
-des comptes.
+auth/authentication.py
+
+Gestion de l'authentification Firebase et des comptes utilisateurs.
+
+Architecture :
+    - Firebase Admin SDK :
+        * vérification des tokens
+        * lecture/modification des comptes
+        * gestion des custom claims
+    - Firebase Authentication REST API :
+        * connexion email / mot de passe
 
 Rôles :
-  - global_master   : voit toutes les sociétés
-  - company_master  : administre une société
-  - user            : utilisateur standard
+    - global_master
+    - company_master
+    - user
 
-L'activation d'un compte repose sur deux leviers indépendants,
-appliqués séparément par l'administrateur dans tab_global_overview.py :
-  - disabled (set_user_active) : le compte peut se connecter ou non ;
-  - pages (set_user_pages) : ce que le compte peut voir une fois connecté.
+Claims utilisés :
+    - role
+    - company_id
+    - company_name
+    - pages
 
-Le claim "approved" n'est plus utilisé pour bloquer la connexion.
+Le claim "approved" n'est plus utilisé.
 
-Cache / ressources :
-  - Firebase Admin est initialisé une seule fois via st.cache_resource.
-  - L'appel réseau coûteux fb_auth.list_users().iterate_all() est
-    mutualisé via st.cache_data(ttl=120).
-  - list_users() et list_companies() ne sont pas cachées : leurs règles
-    de filtrage/permission sont toujours réévaluées à chaque appel.
-  - Toute mutation d'un compte invalide explicitement le cache des
-    utilisateurs.
-  - authenticate() n'est jamais cachée : elle manipule des mots de passe,
-    des tokens et l'état courant du compte.
-
-Session :
-  - Les claims (rôle, société, pages) sont copiés dans st.session_state.user
-    au login. refresh_session_user() permet de les relire depuis Firebase
-    en cours de session (appelée, avec un throttle, par apps_streamlit.py),
-    afin qu'un changement de droits ou une désactivation soit pris en
-    compte sans attendre une reconnexion.
+Important :
+    authenticate() n'est PAS mise en cache.
 """
+
+import logging
 
 import requests
 import streamlit as st
@@ -43,36 +40,62 @@ from firebase_admin import credentials
 from piezo_app.auth import permissions
 
 
+logger = logging.getLogger(__name__)
+
+
 # ============================================================================
-# INITIALISATION FIREBASE
+# INITIALISATION FIREBASE ADMIN
 # ============================================================================
 
 @st.cache_resource
 def _init_firebase():
     """
     Initialise Firebase Admin une seule fois par processus Streamlit.
-
-    st.cache_resource est utilisé car l'application Firebase est une
-    ressource partagée et réutilisable, et non une donnée à recalculer.
     """
 
+    # Si Firebase est déjà initialisé, on réutilise l'application existante.
     if firebase_admin._apps:
         return firebase_admin.get_app()
 
-    cred_dict = dict(st.secrets["firebase_service_account"])
-    cred = credentials.Certificate(cred_dict)
+    try:
+        cred_dict = dict(st.secrets["firebase_service_account"])
+    except Exception as e:
+        logger.exception(
+            "Impossible de lire firebase_service_account dans st.secrets."
+        )
+        raise RuntimeError(
+            "Configuration Firebase invalide : "
+            "firebase_service_account est absent de st.secrets."
+        ) from e
 
-    return firebase_admin.initialize_app(cred)
+    try:
+        cred = credentials.Certificate(cred_dict)
+        return firebase_admin.initialize_app(cred)
+
+    except Exception as e:
+        logger.exception("Échec de l'initialisation Firebase Admin.")
+        raise RuntimeError(
+            "Impossible d'initialiser Firebase Admin."
+        ) from e
 
 
-_init_firebase()
+# Initialisation au chargement du module.
+_firebase_app = _init_firebase()
 
 
 # ============================================================================
-# CONFIGURATION FIREBASE AUTHENTICATION
+# CONFIGURATION FIREBASE AUTHENTICATION REST
 # ============================================================================
 
-_API_KEY = st.secrets["firebase"]["api_key"]
+try:
+    _API_KEY = st.secrets["firebase"]["api_key"]
+except Exception as e:
+    logger.exception("firebase.api_key absent de st.secrets.")
+    raise RuntimeError(
+        "Configuration Firebase invalide : "
+        "firebase.api_key est absent de st.secrets."
+    ) from e
+
 
 _SIGN_IN_URL = (
     "https://identitytoolkit.googleapis.com/v1/"
@@ -81,16 +104,14 @@ _SIGN_IN_URL = (
 
 
 # ============================================================================
-# EXCEPTIONS
+# EXCEPTIONS DE COMPATIBILITÉ
 # ============================================================================
 
 class EmailNotVerifiedError(Exception):
     """
-    Conservée pour compatibilité éventuelle.
+    Conservée pour compatibilité avec d'anciens imports.
 
-    La vérification email n'est plus effectuée dans authenticate().
-    Elle est gérée en amont, au moment de l'inscription / du clic sur
-    le lien de confirmation.
+    La vérification de l'email n'est pas utilisée pour bloquer la connexion.
     """
 
     pass
@@ -98,10 +119,12 @@ class EmailNotVerifiedError(Exception):
 
 class PendingApprovalError(Exception):
     """
-    Conservée pour compatibilité éventuelle.
+    Conservée pour compatibilité avec d'anciens imports.
 
-    authenticate() ne la lève plus : un compte désactivé ou sans rôle
-    attribué retourne simplement None.
+    Le mécanisme actuel repose sur :
+        - disabled
+        - role
+        - pages
     """
 
     pass
@@ -116,39 +139,79 @@ def authenticate(
     password: str,
 ) -> dict | None:
     """
-    Authentifie un utilisateur auprès de Firebase.
+    Authentifie un utilisateur Firebase.
 
-    Le compte doit :
-        - exister ;
-        - ne pas être désactivé ;
-        - posséder un rôle.
+    Étapes :
+        1. Firebase Authentication REST API
+        2. récupération du ID token
+        3. vérification du ID token avec Firebase Admin
+        4. récupération du compte Firebase
+        5. contrôle disabled
+        6. récupération des custom claims
+        7. contrôle du rôle
 
-    Retourne None si l'authentification échoue.
+    Retourne un dictionnaire utilisateur ou None.
 
-    IMPORTANT :
-    Cette fonction ne doit jamais être mise en cache.
+    Aucun cache :
+        cette fonction manipule des identifiants, tokens et données
+        de session utilisateur.
     """
+
+    email = (email or "").strip()
+
+    if not email or not password:
+        return None
+
+    # ------------------------------------------------------------------
+    # 1. Connexion Firebase Authentication
+    # ------------------------------------------------------------------
 
     try:
         response = requests.post(
             _SIGN_IN_URL,
             json={
-                "email": email.strip(),
+                "email": email,
                 "password": password,
                 "returnSecureToken": True,
             },
-            timeout=10,
+            timeout=15,
         )
 
-    except requests.RequestException:
+    except requests.RequestException as e:
+        logger.error(
+            "Erreur réseau lors de la connexion Firebase pour %s : %s",
+            email,
+            e,
+        )
         return None
 
-    # ------------------------------------------------------------------------
-    # Authentification Firebase échouée
-    # ------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 2. Vérification de la réponse Firebase
+    # ------------------------------------------------------------------
 
     if response.status_code != 200:
+        try:
+            error_data = response.json()
+            firebase_error = (
+                error_data
+                .get("error", {})
+                .get("message", "UNKNOWN_ERROR")
+            )
+        except ValueError:
+            firebase_error = response.text
+
+        logger.warning(
+            "Connexion Firebase refusée pour %s — HTTP %s — %s",
+            email,
+            response.status_code,
+            firebase_error,
+        )
+
         return None
+
+    # ------------------------------------------------------------------
+    # 3. Extraction du token
+    # ------------------------------------------------------------------
 
     try:
         data = response.json()
@@ -156,140 +219,235 @@ def authenticate(
         id_token = data["idToken"]
         uid = data["localId"]
 
-    except (ValueError, KeyError):
+    except (ValueError, KeyError) as e:
+        logger.error(
+            "Réponse Firebase Authentication invalide pour %s : %s",
+            email,
+            e,
+        )
         return None
 
-    # ------------------------------------------------------------------------
-    # Vérification du token
-    # ------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 4. Vérification du token avec Firebase Admin
+    # ------------------------------------------------------------------
 
     try:
-        decoded_token = fb_auth.verify_id_token(id_token)
+        decoded_token = fb_auth.verify_id_token(
+            id_token,
+            app=_firebase_app,
+        )
 
-    except Exception:
+    except Exception as e:
+        logger.error(
+            "Échec verify_id_token pour %s : %s",
+            email,
+            e,
+        )
         return None
 
+    # Vérification de cohérence UID.
     if decoded_token.get("uid") != uid:
+        logger.error(
+            "UID incohérent pour %s : token=%s / login=%s",
+            email,
+            decoded_token.get("uid"),
+            uid,
+        )
         return None
 
-    # ------------------------------------------------------------------------
-    # Récupération du compte Firebase
-    # ------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 5. Récupération du compte Firebase
+    # ------------------------------------------------------------------
 
     try:
-        user_record = fb_auth.get_user(uid)
+        user_record = fb_auth.get_user(
+            uid,
+            app=_firebase_app,
+        )
 
-    except Exception:
+    except fb_auth.UserNotFoundError:
+        logger.warning(
+            "Compte Firebase introuvable après authentification : %s",
+            email,
+        )
         return None
 
-    # ------------------------------------------------------------------------
-    # Compte désactivé
-    # ------------------------------------------------------------------------
+    except Exception as e:
+        logger.error(
+            "Échec get_user pour %s : %s",
+            email,
+            e,
+        )
+        return None
+
+    # ------------------------------------------------------------------
+    # 6. Compte désactivé
+    # ------------------------------------------------------------------
 
     if user_record.disabled:
+        logger.info(
+            "Connexion refusée : compte désactivé — %s",
+            email,
+        )
         return None
 
-    # ------------------------------------------------------------------------
-    # Custom claims
-    # ------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 7. Custom claims
+    # ------------------------------------------------------------------
 
-    claims = decoded_token
+    # On utilise les claims du compte Firebase.
+    #
+    # Le token contient normalement les mêmes claims, mais les custom
+    # claims peuvent avoir été modifiés récemment. Le record Firebase
+    # constitue ici la source de vérité côté serveur.
+
+    claims = user_record.custom_claims or {}
+
     role = claims.get("role")
 
-    if role is None:
+    if not role:
+        logger.warning(
+            "Connexion refusée : aucun rôle Firebase pour %s (uid=%s)",
+            email,
+            uid,
+        )
         return None
 
-    # ------------------------------------------------------------------------
-    # Profil utilisateur
-    # ------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 8. Construction de la session utilisateur
+    # ------------------------------------------------------------------
 
-    return {
+    pages = claims.get("pages")
+
+    if pages is None:
+        pages = {}
+
+    user = {
         "uid": uid,
-        "email": user_record.email,
+        "email": user_record.email or email,
         "role": role,
         "company_id": claims.get("company_id"),
         "company_name": claims.get("company_name"),
-        "pages": claims.get("pages"),
+        "pages": pages,
         "id_token": id_token,
         "refresh_token": data.get("refreshToken"),
         "expires_in": data.get("expiresIn"),
     }
 
+    logger.info(
+        "Connexion réussie : %s — rôle=%s — société=%s",
+        user["email"],
+        role,
+        user.get("company_id"),
+    )
+
+    return user
+
 
 # ============================================================================
-# RAFRAÎCHISSEMENT DE LA SESSION
+# RAFRAÎCHISSEMENT DE SESSION
 # ============================================================================
 
 def refresh_session_user(user: dict) -> dict | None:
     """
-    Relit rôle, société et pages depuis Firebase pour un utilisateur déjà
-    connecté, sans redemander le mot de passe.
+    Actualise les informations Firebase d'un utilisateur déjà connecté.
 
-    Retourne :
-        - un dict utilisateur à jour (mêmes clés que authenticate()) ;
-        - None si le compte n'existe plus, est désactivé ou n'a plus de
-          rôle : l'appelant doit alors déconnecter l'utilisateur.
+    Vérifie :
+        - existence du compte
+        - disabled
+        - rôle
+        - société
+        - pages
 
-    En cas d'erreur réseau ou Firebase transitoire, la session existante
-    est conservée telle quelle (on ne déconnecte pas quelqu'un à cause
-    d'un incident réseau passager).
-
-    IMPORTANT :
-    Cette fonction ne doit jamais être mise en cache.
+    En cas d'erreur réseau temporaire, la session existante est conservée.
     """
 
-    try:
-        record = fb_auth.get_user(user["uid"])
-
-    except fb_auth.UserNotFoundError:
+    if not user:
         return None
 
-    except Exception:
+    uid = user.get("uid")
+
+    if not uid:
+        return None
+
+    try:
+        record = fb_auth.get_user(
+            uid,
+            app=_firebase_app,
+        )
+
+    except fb_auth.UserNotFoundError:
+        logger.warning(
+            "refresh_session_user : utilisateur introuvable : %s",
+            uid,
+        )
+        return None
+
+    except Exception as e:
+        logger.warning(
+            "refresh_session_user : erreur Firebase transitoire : %s",
+            e,
+        )
+
+        # On conserve la session existante en cas d'erreur transitoire.
         return user
+
+    # ------------------------------------------------------------------
+    # Compte désactivé
+    # ------------------------------------------------------------------
+
+    if record.disabled:
+        logger.info(
+            "refresh_session_user : compte désactivé : %s",
+            uid,
+        )
+        return None
+
+    # ------------------------------------------------------------------
+    # Claims
+    # ------------------------------------------------------------------
 
     claims = record.custom_claims or {}
 
-    if record.disabled or claims.get("role") is None:
+    role = claims.get("role")
+
+    if not role:
+        logger.warning(
+            "refresh_session_user : aucun rôle pour %s",
+            uid,
+        )
         return None
+
+    pages = claims.get("pages") or {}
 
     return {
         **user,
-        "email": record.email,
-        "role": claims["role"],
+        "email": record.email or user.get("email"),
+        "role": role,
         "company_id": claims.get("company_id"),
         "company_name": claims.get("company_name"),
-        "pages": claims.get("pages"),
+        "pages": pages,
     }
 
 
 # ============================================================================
-# CACHE DES UTILISATEURS FIREBASE
+# CACHE DES UTILISATEURS
 # ============================================================================
 
 @st.cache_data(ttl=120)
 def _fetch_all_users_raw():
     """
-    Récupère tous les comptes Firebase.
+    Récupère les comptes Firebase.
 
-    Cette fonction constitue le seul point de cache du listing Firebase.
-
-    Le résultat est volontairement brut :
-        - aucune permission ;
-        - aucun filtrage par société ;
-        - aucune décision d'accès.
-
-    Le filtrage est effectué ensuite par list_users(), à chaque appel.
-
-    TTL :
-        120 secondes.
-
-    Toute mutation de compte appelle :
-        _fetch_all_users_raw.clear()
+    Cette fonction est la seule partie du listing utilisateurs mise en cache.
     """
 
     result = []
 
-    for user in fb_auth.list_users().iterate_all():
+    for user in fb_auth.list_users(
+        app=_firebase_app
+    ).iterate_all():
+
         claims = user.custom_claims or {}
 
         result.append(
@@ -300,7 +458,7 @@ def _fetch_all_users_raw():
                 "company_id": claims.get("company_id"),
                 "company_name": claims.get("company_name"),
                 "disabled": user.disabled,
-                "pages": claims.get("pages"),
+                "pages": claims.get("pages") or {},
             }
         )
 
@@ -309,10 +467,7 @@ def _fetch_all_users_raw():
 
 def invalidate_users_cache():
     """
-    Invalide le cache du listing Firebase.
-
-    À appeler après toute écriture de claims ou toute création /
-    suppression de compte faite hors de ce module (ex. auth/registration.py).
+    Invalide le cache des utilisateurs.
     """
 
     _fetch_all_users_raw.clear()
@@ -325,11 +480,6 @@ def invalidate_users_cache():
 def list_users(current_user: dict):
     """
     Retourne les utilisateurs visibles par l'utilisateur courant.
-
-    Le résultat Firebase provient du cache _fetch_all_users_raw().
-
-    Le filtrage n'est PAS caché afin que les permissions soient
-    systématiquement réévaluées.
     """
 
     role = current_user.get("role")
@@ -342,7 +492,7 @@ def list_users(current_user: dict):
     result = [
         user
         for user in _fetch_all_users_raw()
-        if user["role"] is not None
+        if user.get("role") is not None
     ]
 
     if role == permissions.COMPANY_MASTER:
@@ -351,7 +501,7 @@ def list_users(current_user: dict):
         result = [
             user
             for user in result
-            if user["company_id"] == company_id
+            if user.get("company_id") == company_id
         ]
 
     return result
@@ -396,13 +546,19 @@ def create_user(
             )
         )
 
-    if role == permissions.GLOBAL_MASTER and company_id is not None:
+    if (
+        role == permissions.GLOBAL_MASTER
+        and company_id is not None
+    ):
         raise ValueError(
             "Un global_master ne doit pas être rattaché à une société."
         )
 
     if (
-        role in (permissions.COMPANY_MASTER, permissions.USER)
+        role in (
+            permissions.COMPANY_MASTER,
+            permissions.USER,
+        )
         and company_id is None
     ):
         raise ValueError(
@@ -412,6 +568,7 @@ def create_user(
     user_record = fb_auth.create_user(
         email=email,
         password=password,
+        app=_firebase_app,
     )
 
     claims = {
@@ -426,20 +583,23 @@ def create_user(
         fb_auth.set_custom_user_claims(
             user_record.uid,
             claims,
+            app=_firebase_app,
         )
 
     except Exception:
-        # Sans rôle, le compte serait invisible dans l'admin (voir
-        # list_users) tout en bloquant l'adresse email : on le supprime
-        # pour ne pas laisser de compte orphelin.
         try:
-            fb_auth.delete_user(user_record.uid)
+            fb_auth.delete_user(
+                user_record.uid,
+                app=_firebase_app,
+            )
         except Exception:
-            pass
+            logger.exception(
+                "Impossible de supprimer le compte Firebase orphelin."
+            )
+
         raise
 
-    # Le listing Firebase est désormais périmé.
-    _fetch_all_users_raw.clear()
+    invalidate_users_cache()
 
     return user_record.uid
 
@@ -468,10 +628,10 @@ def set_user_active(
     fb_auth.update_user(
         target["uid"],
         disabled=not is_active,
+        app=_firebase_app,
     )
 
-    # Le listing Firebase est désormais périmé.
-    _fetch_all_users_raw.clear()
+    invalidate_users_cache()
 
 
 # ============================================================================
@@ -486,7 +646,7 @@ def set_user_role(
     new_company_name: str | None = None,
 ):
     """
-    Modifie le rôle d'un compte existant et éventuellement sa société.
+    Modifie le rôle d'un compte existant.
     """
 
     if not permissions.can_modify_target(
@@ -499,7 +659,8 @@ def set_user_role(
 
     if new_role == permissions.GLOBAL_MASTER:
         raise PermissionError(
-            "Le rôle global_master ne peut pas être attribué depuis cet écran."
+            "Le rôle global_master ne peut pas être attribué depuis "
+            "cet écran."
         )
 
     if (
@@ -533,28 +694,39 @@ def set_user_role(
         )
 
     if (
-        new_role in (permissions.COMPANY_MASTER, permissions.USER)
+        new_role in (
+            permissions.COMPANY_MASTER,
+            permissions.USER,
+        )
         and target_company_id is None
     ):
         raise ValueError(
             "company_id est obligatoire pour ce rôle."
         )
 
-    existing_claims = (
-        fb_auth.get_user(target["uid"]).custom_claims or {}
+    existing_record = fb_auth.get_user(
+        target["uid"],
+        app=_firebase_app,
     )
 
+    existing_claims = existing_record.custom_claims or {}
+
     existing_claims["role"] = new_role
-    existing_claims["company_id"] = target_company_id
-    existing_claims["company_name"] = target_company_name
+
+    if target_company_id is None:
+        existing_claims.pop("company_id", None)
+        existing_claims.pop("company_name", None)
+    else:
+        existing_claims["company_id"] = target_company_id
+        existing_claims["company_name"] = target_company_name
 
     fb_auth.set_custom_user_claims(
         target["uid"],
         existing_claims,
+        app=_firebase_app,
     )
 
-    # Les données utilisateur en cache sont périmées.
-    _fetch_all_users_raw.clear()
+    invalidate_users_cache()
 
 
 # ============================================================================
@@ -568,14 +740,6 @@ def set_user_pages(
 ):
     """
     Définit les pages accessibles à un utilisateur.
-
-    Un company_master ne peut accorder à ses users que les pages
-    auxquelles il a lui-même accès.
-
-    Les pages sont normalisées avant écriture (permissions.normalize_pages) :
-    toutes les PAGE_KEYS sont écrites, et "twin" / "interpretation" sont
-    forcées à False si "analyse" n'est pas accordée. Ce qui est stocké
-    dans Firebase correspond donc exactement à ce qui sera effectif.
     """
 
     if not permissions.can_modify_target(
@@ -602,73 +766,23 @@ def set_user_pages(
             "vous n'avez pas vous-même accès."
         )
 
-    existing_claims = (
-        fb_auth.get_user(target["uid"]).custom_claims or {}
+    existing_record = fb_auth.get_user(
+        target["uid"],
+        app=_firebase_app,
     )
+
+    existing_claims = existing_record.custom_claims or {}
 
     existing_claims["pages"] = normalized
 
     fb_auth.set_custom_user_claims(
         target["uid"],
         existing_claims,
+        app=_firebase_app,
     )
 
-    # Les données utilisateur en cache sont périmées.
-    _fetch_all_users_raw.clear()
+    invalidate_users_cache()
 
-def set_user_role(
-    current_user: dict,
-    target: dict,
-    new_role: str,
-    new_company_id: str | None = None,
-    new_company_name: str | None = None,
-):
-    """
-    Modifie le rôle d'un compte existant, et éventuellement sa société
-    (ex. promouvoir un 'user' en 'company_master', avec ou sans
-    changement de société).
-
-    Si new_company_id/new_company_name ne sont pas fournis, la société
-    actuelle du compte est conservée.
-    """
-
-    if not permissions.can_modify_target(current_user, target):
-        raise PermissionError("Droits insuffisants pour modifier ce compte.")
-
-    if new_role == "global_master":
-        raise PermissionError("Le rôle global_master ne peut pas être attribué depuis cet écran.")
-
-    if new_role == "company_master" and not permissions.can_assign_company_master(current_user):
-        raise PermissionError("Seul un global_master peut attribuer le rôle company_master.")
-
-    # Société cible : celle fournie, sinon celle déjà en place sur le compte.
-    target_company_id = new_company_id if new_company_id is not None else target.get("company_id")
-    target_company_name = (
-        new_company_name if new_company_name is not None else target.get("company_name")
-    )
-
-    if not permissions.can_create_user_for(current_user, new_role, target_company_id):
-        raise PermissionError(
-            f"Le rôle '{current_user['role']}' ne peut pas attribuer "
-            f"le rôle '{new_role}' à cette société."
-        )
-
-    if new_role in ("company_master", "user") and target_company_id is None:
-        raise ValueError("company_id est obligatoire pour ce rôle.")
-
-    existing_claims = fb_auth.get_user(target["uid"]).custom_claims or {}
-
-    existing_claims["role"] = new_role
-    existing_claims["company_id"] = target_company_id
-    existing_claims["company_name"] = target_company_name
-
-    fb_auth.set_custom_user_claims(
-        target["uid"],
-        existing_claims,
-    )
-
-    # Le cache des comptes est désormais périmé : on l'invalide.
-    _fetch_all_users_raw.clear()
 
 # ============================================================================
 # LISTE DES SOCIÉTÉS
@@ -676,18 +790,13 @@ def set_user_role(
 
 def list_companies():
     """
-    Retourne la liste des sociétés connues.
-
-    Réutilise le cache _fetch_all_users_raw().
-
-    Aucun cache supplémentaire n'est appliqué : la transformation est
-    locale et très légère, tandis que le cache principal mutualise déjà
-    l'appel réseau Firebase.
+    Retourne les sociétés connues à partir des custom claims utilisateurs.
     """
 
     companies = {}
 
     for user in _fetch_all_users_raw():
+
         company_id = user.get("company_id")
         company_name = user.get("company_name")
 
