@@ -4,7 +4,8 @@
 import matplotlib.pyplot as plt
 import streamlit as st
 
-from piezo_app import piezo_core as core
+# from piezo_app import piezo_core as core
+from piezo_app.services import piezo_core as core
 from piezo_app.components.mpl_theme import theme_colors
 
 

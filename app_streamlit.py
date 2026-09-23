@@ -2,10 +2,12 @@
 """
 Expert Piézométrie Pro — Digital Twin — point d'entrée de l'application.
 
-Ne fait que deux choses : la connexion, puis la navigation entre pages.
+Ne fait que trois choses : la connexion, la resynchronisation régulière
+des droits de l'utilisateur connecté, puis la navigation entre pages.
 """
 
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(
@@ -16,14 +18,18 @@ sys.path.insert(
 import requests
 import streamlit as st
 
-from piezo_app.auth import permissions, registration
+from piezo_app.auth import authentication, permissions, registration
 from piezo_app.components import login
 from piezo_app.components.mpl_theme import apply_mpl_theme
 
 st.set_page_config(
-    page_title="Expert Piézométrie Pro",
+    page_title="Piézométrie",
     layout="wide",
 )
+
+# Intervalle minimal (en secondes) entre deux relectures des droits
+# depuis Firebase pour un utilisateur connecté.
+_CLAIMS_REFRESH_EVERY_S = 60
 
 
 # ---------------------------------------------------------
@@ -41,35 +47,56 @@ apply_mpl_theme()
 # bouton ci-dessous, jamais au simple chargement de cette page —
 # ce qui évite qu'un pré-scan de sécurité côté messagerie (ex.
 # Outlook Safe Links) ne consomme le lien avant l'utilisateur.
+#
+# L'adresse email transmise aux administrateurs est celle renvoyée par
+# Firebase après validation du code, jamais celle du paramètre d'URL
+# (modifiable par n'importe qui).
 # ---------------------------------------------------------
 
 if st.query_params.get("action") == "email_verified" and st.query_params.get("oobCode"):
-    email = st.query_params.get("email")
     oob_code = st.query_params.get("oobCode")
 
     st.title("Confirmation de votre adresse email")
-    st.write(f"Cliquez sur le bouton ci-dessous pour confirmer l'adresse **{email}**.")
+    st.write("Cliquez sur le bouton ci-dessous pour confirmer votre adresse email.")
 
     if st.button("Confirmer mon email", type="primary"):
         api_key = st.secrets["firebase"]["api_key"]
-        resp = requests.post(
-            f"https://identitytoolkit.googleapis.com/v1/accounts:update?key={api_key}",
-            json={"oobCode": oob_code},
-            timeout=10,
-        )
+
+        try:
+            resp = requests.post(
+                f"https://identitytoolkit.googleapis.com/v1/accounts:update?key={api_key}",
+                json={"oobCode": oob_code},
+                timeout=10,
+            )
+        except requests.RequestException:
+            st.error(
+                "Impossible de joindre le service de confirmation. "
+                "Réessayez dans un instant."
+            )
+            st.stop()
 
         if resp.status_code == 200:
-            st.success("Votre adresse email a bien été validée.")
+            try:
+                verified_email = resp.json().get("email")
+            except ValueError:
+                verified_email = None
+
+            if verified_email:
+                st.success(f"L'adresse {verified_email} a bien été validée.")
+            else:
+                st.success("Votre adresse email a bien été validée.")
+
             st.info(
                 "Votre compte est maintenant en attente d'activation par un "
                 "administrateur. Vous recevrez un accès dès que votre compte "
                 "aura été validé."
             )
-            if email:
+
+            if verified_email:
                 try:
-                    registration.notify_admins_of_email_confirmation(email)
+                    registration.notify_admins_of_email_confirmation(verified_email)
                 except Exception as e:
-                    print(f"Échec de notification admin pour {email} : {e}")
+                    print(f"Échec de notification admin pour {verified_email} : {e}")
         else:
             st.error(
                 "Ce lien de confirmation est invalide ou a expiré. "
@@ -120,7 +147,29 @@ if st.session_state.user is None:
 # UTILISATEUR CONNECTÉ
 # =========================================================
 
+# ---------------------------------------------------------
+# Resynchronisation des droits : les claims (rôle, société, pages)
+# sont copiés dans la session au login. On les relit ici au plus une
+# fois par minute pour qu'un changement de droits ou une désactivation
+# de compte soit pris en compte sans reconnexion.
+# ---------------------------------------------------------
+
+_now = time.time()
+
+if _now - st.session_state.get("_claims_checked_at", 0.0) > _CLAIMS_REFRESH_EVERY_S:
+    _fresh_user = authentication.refresh_session_user(st.session_state.user)
+    st.session_state["_claims_checked_at"] = _now
+
+    if _fresh_user is None:
+        # Compte supprimé, désactivé ou sans rôle : retour à la connexion.
+        st.session_state.user = None
+        st.rerun()
+
+    st.session_state.user = _fresh_user
+
 login.render_user_badge()
+
+allowed = permissions.allowed_pages(st.session_state.user)
 
 
 pages = [
@@ -131,6 +180,23 @@ pages = [
         default=True,
     ),
 ]
+
+# Cartographie et Rapport ne sont proposés qu'aux comptes disposant d'au
+# moins un droit métier : sans cela, un compte sans aucune permission y
+# accéderait alors que analyse.py lui affiche « aucune fonctionnalité ».
+if allowed:
+    pages += [
+        st.Page(
+            "src/piezo_app/app_pages/carto.py",
+            title="Cartographie",
+            icon=":material/map:",
+        ),
+        st.Page(
+            "src/piezo_app/app_pages/rapport.py",
+            title="Rapport",
+            icon=":material/assessment:",
+        ),
+    ]
 
 
 # ---------------------------------------------------------

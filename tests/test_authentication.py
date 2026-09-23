@@ -491,7 +491,7 @@ class TestSetUserPages:
             mock.patch.object(authentication.fb_auth, "set_custom_user_claims") as mocked_set,
         ):
             authentication.set_user_pages(
-                _global_master(), target, {"reseau": True, "analyse": True}
+                _global_master(), target, {"chroniques": True, "analyse": True}
             )
 
         mocked_set.assert_called_once_with(
@@ -499,7 +499,7 @@ class TestSetUserPages:
             {
                 "role": "user",
                 "company_id": "acme",
-                "pages": {"reseau": True, "analyse": True, "carte": False, "twin": False},
+                "pages": {"chroniques": True, "analyse": True, "carte": False, "twin": False},
             },
         )
 
@@ -511,7 +511,7 @@ class TestSetUserPages:
             mock.patch.object(authentication.fb_auth, "set_custom_user_claims") as mocked_set,
         ):
             with pytest.raises(PermissionError):
-                authentication.set_user_pages(actor, target, {"reseau": True})
+                authentication.set_user_pages(actor, target, {"chroniques": True})
         mocked_get.assert_not_called()
         mocked_set.assert_not_called()
 
@@ -523,7 +523,7 @@ class TestSetUserPages:
             mock.patch.object(authentication.fb_auth, "set_custom_user_claims") as mocked_set,
         ):
             with pytest.raises(PermissionError):
-                authentication.set_user_pages(actor, target, {"reseau": True})
+                authentication.set_user_pages(actor, target, {"chroniques": True})
         mocked_get.assert_not_called()
         mocked_set.assert_not_called()
 
@@ -534,6 +534,6 @@ class TestSetUserPages:
             mock.patch.object(authentication.fb_auth, "set_custom_user_claims") as mocked_set,
         ):
             with pytest.raises(PermissionError):
-                authentication.set_user_pages(actor, actor, {"reseau": True})
+                authentication.set_user_pages(actor, actor, {"chroniques": True})
         mocked_get.assert_not_called()
         mocked_set.assert_not_called()

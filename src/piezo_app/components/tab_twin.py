@@ -4,8 +4,8 @@
 import matplotlib.pyplot as plt
 import streamlit as st
 
-from piezo_app import piezo_core as core
-
+# from piezo_app import piezo_core as core
+from piezo_app.services import piezo_core as core
 
 def render(chronicles, selection, target_name, freq, ok, Q, S, K, thickness, distance, Area):
     st.subheader("Jumeau numérique aquifère")

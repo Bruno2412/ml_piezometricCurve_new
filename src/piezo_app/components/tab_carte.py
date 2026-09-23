@@ -7,8 +7,8 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 
-from piezo_app import piezo_core as core
-
+# from piezo_app import piezo_core as core
+from piezo_app.services import piezo_core as core
 
 def render(selection, chronicles, coords_dict):
     st.subheader("Carte piézométrique évolutive")
@@ -90,4 +90,17 @@ def render(selection, chronicles, coords_dict):
         "la surface colorée n'est valide qu'à l'intérieur du polygone "
         "formé par les points disponibles, et reste une approximation "
         "grossière"
+    )
+
+    st.divider()
+    st.checkbox(
+        "Partager ces données avec l'onglet « Cartographie » "
+        "(page indépendante, affichage plein écran)",
+        value=False,
+        key="share_with_cartography",
+        help=(
+            "Une fois coché, la page « Cartographie » affichera ces mêmes "
+            "chroniques et coordonnées, avec une carte en plein écran. "
+            "Décochez pour retirer l'accès."
+        ),
     )

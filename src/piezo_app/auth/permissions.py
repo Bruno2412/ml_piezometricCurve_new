@@ -20,19 +20,51 @@ USER = "user"
 ADMIN_ROLES = (GLOBAL_MASTER, COMPANY_MASTER)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Permissions par onglet
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Ce sont les 5 onglets métier de app_pages/analyse.py (st.tabs), pas
+# des pages de navigation séparées : il n'y a donc pas d'URL propre à
+# chacun. Le contrôle se fait au moment de construire la liste des
+# onglets à afficher — voir app_pages/analyse.py.
+#
+# L'ORDRE de PAGE_KEYS est aussi l'ordre d'affichage et d'exécution des
+# onglets : "analyse" doit précéder "twin" et "interpretation", car ces
+# deux onglets réutilisent le résultat de fréquence (freq) calculé par
+# l'onglet "analyse".
+
+PAGE_KEYS = ("chroniques", "analyse", "carte", "twin", "interpretation")
+
+PAGE_LABELS = {
+    "chroniques": "Chroniques",
+    "analyse": "Analyse & Prévision",
+    "carte": "Carte Piézométrique",
+    "twin": "Digital Twin",
+    "interpretation": "Interprétation",
+}
+
+# Onglets qui n'ont de sens que si "analyse" est aussi autorisé.
+DEPENDS_ON_ANALYSE = ("twin", "interpretation")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Rôles
+# ─────────────────────────────────────────────────────────────────────────
+
 def is_global_master(user: dict) -> bool:
-    return user["role"] == GLOBAL_MASTER
+    return user.get("role") == GLOBAL_MASTER
 
 
 def is_company_master(user: dict) -> bool:
-    return user["role"] == COMPANY_MASTER
+    return user.get("role") == COMPANY_MASTER
 
 
 def can_administer_users(user: dict) -> bool:
     """Un global_master ou un company_master peut créer/désactiver des
     comptes (le company_master, uniquement dans sa propre société — la
     restriction est appliquée côté auth.authentication.list_users)."""
-    return user["role"] in ADMIN_ROLES
+    return user.get("role") in ADMIN_ROLES
 
 
 def can_switch_company(user: dict) -> bool:
@@ -45,8 +77,10 @@ def require_role(user: dict, allowed_roles: tuple):
     """Lève une PermissionError si le rôle de l'utilisateur n'est pas
     dans allowed_roles. À utiliser en tête d'un écran d'admin, par
     exemple : permissions.require_role(user, (permissions.GLOBAL_MASTER,))"""
-    if user["role"] not in allowed_roles:
-        raise PermissionError(f"Rôle '{user['role']}' insuffisant (requis : {allowed_roles}).")
+    if user.get("role") not in allowed_roles:
+        raise PermissionError(
+            f"Rôle '{user.get('role')}' insuffisant (requis : {allowed_roles})."
+        )
 
 
 def can_assign_company_master(current_user: dict) -> bool:
@@ -78,7 +112,11 @@ def can_create_user_for(actor: dict, target_role: str, target_company_id: str | 
         return target_role in (COMPANY_MASTER, USER)
 
     if is_company_master(actor):
-        return target_role == USER and target_company_id == actor["company_id"]
+        return (
+            target_role == USER
+            and target_company_id is not None
+            and target_company_id == actor.get("company_id")
+        )
 
     return False
 
@@ -97,36 +135,49 @@ def can_modify_target(actor: dict, target: dict) -> bool:
     `target` doit contenir au moins {"uid", "role", "company_id"}."""
     if not can_administer_users(actor):
         return False
-    if target["uid"] == actor["uid"]:
+    if target.get("uid") == actor.get("uid"):
         return False
-    if target["role"] == GLOBAL_MASTER:
+    if target.get("role") == GLOBAL_MASTER:
         return False
-    if is_company_master(actor) and target["company_id"] != actor["company_id"]:
+    if is_company_master(actor) and target.get("company_id") != actor.get("company_id"):
         return False
     return True
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Permissions par onglet (Réseau / Analyse / Carte / Digital Twin)
+# Pages (onglets)
 # ─────────────────────────────────────────────────────────────────────────
-#
-# Ce sont les 4 onglets internes de app_pages/analyse.py (st.tabs), pas
-# des pages de navigation séparées : il n'y a donc pas d'URL propre à
-# chacun. Le contrôle se fait au moment de construire la liste des
-# onglets à afficher — voir app_pages/analyse.py.
-#
-# "twin" (Digital Twin) réutilise le résultat de fréquence calculé par
-# l'onglet "analyse" : il n'a donc de sens que si "analyse" est aussi
-# autorisé (voir allowed_pages, qui applique cette dépendance).
 
-PAGE_KEYS = ("reseau", "analyse", "carte", "twin")
+def _as_pages_dict(raw) -> dict:
+    """Accepte le claim 'pages' sous forme de dict {clé: bool} ou de
+    liste/tuple/set de clés autorisées ; tout le reste vaut « aucun accès »."""
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, (list, tuple, set)):
+        return {str(key): True for key in raw}
+    return {}
 
-PAGE_LABELS = {
-    "reseau": "Réseau",
-    "analyse": "Analyse & Prévision",
-    "carte": "Carte Piézométrique",
-    "twin": "Digital Twin",
-}
+
+def normalize_pages(pages) -> dict:
+    """
+    Retourne un dict complet {clé: bool} pour toutes les PAGE_KEYS, en
+    appliquant la règle de dépendance : sans "analyse", les onglets de
+    DEPENDS_ON_ANALYSE sont forcément à False.
+
+    Utilisée à la fois à la lecture (allowed_pages) et à l'écriture
+    (auth.authentication.set_user_pages), pour que ce qui est stocké
+    dans Firebase soit exactement ce qui est effectif.
+    """
+    raw = _as_pages_dict(pages)
+    result = {key: bool(raw.get(key, False)) for key in PAGE_KEYS}
+
+    if not result["analyse"]:
+        for key in DEPENDS_ON_ANALYSE:
+            result[key] = False
+
+    return result
 
 
 def allowed_pages(user: dict) -> set:
@@ -137,53 +188,40 @@ def allowed_pages(user: dict) -> set:
     - un global_master possède toujours tous les accès ;
     - pour les autres rôles, l'absence de claim 'pages' signifie
       aucun accès ;
-    - l'absence d'une clé dans 'pages' signifie aucun accès à cette page ;
-    - le Digital Twin nécessite obligatoirement l'accès à l'Analyse.
+    - l'absence d'une clé dans 'pages' signifie aucun accès à cette page
+      (un compte enregistré avant l'ajout d'un onglet ne le voit donc
+      qu'après une nouvelle sauvegarde de ses droits par l'admin) ;
+    - "twin" et "interpretation" nécessitent obligatoirement "analyse".
     """
-
-    # ---------------------------------------------------------
-    # Exception : global_master
-    # ---------------------------------------------------------
     if is_global_master(user):
         return set(PAGE_KEYS)
 
-    # ---------------------------------------------------------
-    # Autres rôles : sécurité stricte
-    # ---------------------------------------------------------
-    raw = user.get("pages") or {}
-
-    allowed = {key for key in PAGE_KEYS if raw.get(key, False)}
-
-    # Le Digital Twin dépend de l'Analyse & Prévision.
-    if "twin" in allowed and "analyse" not in allowed:
-        allowed.discard("twin")
-
-    return allowed
+    normalized = normalize_pages(user.get("pages"))
+    return {key for key, granted in normalized.items() if granted}
 
 
-# def allowed_pages(user: dict) -> set:
-#     """Ensemble des clés d'onglets auxquels `user` a droit.
+def assignable_pages(actor: dict) -> set:
+    """
+    Pages qu'un acteur a le droit d'accorder à un compte qu'il
+    administre (via set_user_pages).
 
-#     Absence de la clé "pages" dans les custom claims (compte créé
-#     avant l'introduction de cette fonctionnalité, ou jamais configuré)
-#     = tout autorisé, pour ne rien casser pour les comptes existants.
-#     Dès qu'un admin enregistre une configuration via
-#     auth.authentication.set_user_pages, seules les clés explicitement
-#     cochées sont autorisées.
+    Principe : on ne peut pas déléguer plus de droits qu'on n'en
+    possède soi-même.
+      - un global_master peut accorder n'importe quelle page à
+        n'importe qui ;
+      - un company_master ne peut accorder que les pages auxquelles
+        IL a lui-même accès (voir allowed_pages) — il peut ainsi
+        gérer les onglets de ses users, mais seulement dans la limite
+        de ses propres droits.
+    """
+    if is_global_master(actor):
+        return set(PAGE_KEYS)
+    return allowed_pages(actor)
 
-#     "twin" est filtré si "analyse" ne l'est pas (dépendance technique,
-#     voir plus haut)."""
-#     raw = user.get("pages")
-#     if raw is None:
-#         allowed = set(PAGE_KEYS)
-#     else:
-#         allowed = {key for key in PAGE_KEYS if raw.get(key, False)}
 
-#     if "twin" in allowed and "analyse" not in allowed:
-#         allowed.discard("twin")
-
-#     return allowed
-
+# ─────────────────────────────────────────────────────────────────────────
+# Société affichée
+# ─────────────────────────────────────────────────────────────────────────
 
 def effective_company_id(user: dict, viewing_company_id: str | None) -> str | None:
     """Détermine la société dont les données doivent être affichées :
@@ -194,4 +232,4 @@ def effective_company_id(user: dict, viewing_company_id: str | None) -> str | No
       s'applique pas à eux (viewing_company_id est ignoré)."""
     if is_global_master(user):
         return viewing_company_id
-    return user["company_id"]
+    return user.get("company_id")
