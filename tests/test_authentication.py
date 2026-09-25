@@ -201,7 +201,14 @@ class TestAuthenticate:
             mock.patch.object(
                 authentication.fb_auth,
                 "get_user",
-                return_value=_fake_user_record(email="chef@acme.com"),
+                return_value=_fake_user_record(
+                    email="chef@acme.com",
+                    custom_claims={
+                        "role": "company_master",
+                        "company_id": "acme",
+                        "company_name": "ACME Corp",
+                    },
+                ),
             ),
         ):
             result = authentication.authenticate("chef@acme.com", "pw")
