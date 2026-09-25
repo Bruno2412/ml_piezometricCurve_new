@@ -11,6 +11,8 @@ from streamlit_folium import st_folium
 
 from piezo_app.auth import permissions
 from piezo_app.services import ign_carto
+from piezo_app.services import outils_carto
+from piezo_app.services import extract_carto
 from piezo_app.services import projects
 from piezo_app.services import piezo_core as core
 
@@ -50,6 +52,11 @@ if "carte" not in permissions.allowed_pages(user):
 current_project = projects.require_current_project(user)
 
 st.title("Cartographie piézométrique")
+
+# ---------------------------------------------------------
+# Outils cartographiques (à venir)
+# ---------------------------------------------------------
+outils_carto.render_tools()
 
 # ---------------------------------------------------------
 # Récupération des données
@@ -242,8 +249,9 @@ if communes_voisines:
     voisins_group.add_to(m)
 
 # ---------------------------------------------------------
-# Cadastre (Modifié : show=True)
+# Cadastre
 # ---------------------------------------------------------
+cadastre = None
 cadastre_note = None
 
 if commune_cible:
@@ -256,7 +264,7 @@ if commune_cible:
             folium.GeoJson(
                 cadastre,
                 name="Cadastre",
-                show=True,  # <-- Poussé à True pour afficher les parcelles au chargement
+                show=True,
                 style_function=lambda feature: {
                     "color": "#666666",
                     "weight": 0.6,
@@ -363,3 +371,14 @@ if cadastre_note:
 if surface_note:
     st.caption(f"ℹ️ {surface_note}")
 
+# ---------------------------------------------------------
+# Extraction / Export SIG
+# ---------------------------------------------------------
+extract_carto.render_export_panel(
+    points_with_coords=points_with_coords,
+    chronicles=chronicles,
+    target_name=target_name,
+    commune_cible=commune_cible,
+    communes_voisines=communes_voisines,
+    cadastre=cadastre,
+)
