@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from piezo_app import piezo_core as core
+from piezo_app.services import piezo_core as core
 
 # ─────────────────────────────────────────────────────────────────────────
 # build_piezo_surface
