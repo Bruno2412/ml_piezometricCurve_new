@@ -78,6 +78,26 @@ def render(
     # --- 3. Construction du DataFrame merged ---
     try:
         merged = target_df.copy()
+        
+        expected_indices = set(range(1, len(selection) + 1))
+        available_indices = set(chronicles.keys())
+        
+        missing_aux = sorted(
+            expected_indices - available_indices - {target_idx}
+        )
+        
+        if missing_aux:
+            missing_names = [
+                selection[i - 1]
+                for i in missing_aux
+                if 1 <= i <= len(selection)
+            ]
+        
+            st.warning(
+                "⚠️ Certaines chroniques auxiliaires sont absentes "
+                f"et seront ignorées : {', '.join(missing_names)}."
+            )
+        
         j = 1
         for i in sorted(chronicles):
             if i == target_idx:
