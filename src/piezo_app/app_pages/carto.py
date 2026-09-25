@@ -84,32 +84,83 @@ commune_cible = None
 communes_voisines = []
 commune_note = None
 
-if points_with_coords:
+if st.session_state.get("carto_search_center"):
+    center = st.session_state["carto_search_center"]
+    zoom_start = st.session_state.get("carto_search_zoom", 14)
+
+    try:
+        commune_cible = ign_carto.get_commune_at_point(lat=center[0], lon=center[1])
+    except Exception as exc:
+        commune_note = f"Erreur récupération commune cible : {exc}"
+
+    if commune_cible:
+        try:
+            communes_voisines = ign_carto.get_neighboring_communes(commune_cible) or []
+        except Exception as exc:
+            commune_note = f"Erreur récupération communes limitrophes : {exc}"
+
+elif points_with_coords:
     lats = [p["lat"] for p in points_with_coords.values()]
     lons = [p["lon"] for p in points_with_coords.values()]
 
     center = [sum(lats) / len(lats), sum(lons) / len(lons)]
     zoom_start = 14
 
-    # 1. Commune cible
     try:
-        commune_cible = ign_carto.get_commune_at_point(
-            lat=center[0], lon=center[1]
-        )
+        commune_cible = ign_carto.get_commune_at_point(lat=center[0], lon=center[1])
     except Exception as exc:
         commune_note = f"Erreur récupération commune cible : {exc}"
 
-    # 2. Communes voisines (traité séparément pour éviter les blocages)
     if commune_cible:
         try:
-            communes_voisines = (
-                ign_carto.get_neighboring_communes(commune_cible) or []
-            )
+            communes_voisines = ign_carto.get_neighboring_communes(commune_cible) or []
         except Exception as exc:
             commune_note = f"Erreur récupération communes limitrophes : {exc}"
 else:
     center = [45.7640, 4.8357]  # Lyon par défaut
     zoom_start = 11
+
+
+# ---------------------------------------------------------
+# Recherche de lieu (géocodage Géoplateforme)
+# ---------------------------------------------------------
+search_col, button_col = st.columns([4, 1])
+
+with search_col:
+    search_query = st.text_input(
+        "Rechercher un lieu",
+        placeholder="Ex : Grenoble, 12 rue de la Paix Lyon...",
+        label_visibility="collapsed",
+        key="carto_search_query",
+    )
+
+with button_col:
+    search_clicked = st.button("Rechercher", use_container_width=True)
+
+if search_clicked and search_query:
+    try:
+        results = ign_carto.search_location(search_query)
+        if results:
+            best = results[0]
+            props = best.get("properties", {})
+            lon, lat = best["geometry"]["coordinates"]
+
+            has_housenumber = bool(props.get("housenumber"))
+
+            st.session_state["carto_search_center"] = [lat, lon]
+            st.session_state["carto_search_zoom"] = 16 if has_housenumber else 13
+            st.session_state["carto_search_label"] = ign_carto.location_label(best)
+            st.session_state["carto_search_is_address"] = has_housenumber
+            st.rerun()
+        else:
+            st.warning(f"Aucun résultat pour « {search_query} ».")
+    except Exception as exc:
+        st.warning(f"Recherche indisponible : {exc}")
+
+
+if st.session_state.get("carto_search_label"):
+    st.caption(f"📍 Centré sur : {st.session_state['carto_search_label']}")
+
 
 # ---------------------------------------------------------
 # Construction de la carte Folium
@@ -144,6 +195,20 @@ folium.TileLayer(
     overlay=False,
     control=True,
 ).add_to(m)
+
+
+# ---------------------------------------------------------
+# Épingle sur le lieu recherché (uniquement si adresse précise)
+# ---------------------------------------------------------
+if st.session_state.get("carto_search_is_address") and st.session_state.get("carto_search_center"):
+    search_lat, search_lon = st.session_state["carto_search_center"]
+    folium.Marker(
+        location=[search_lat, search_lon],
+        popup=st.session_state.get("carto_search_label", "Lieu recherché"),
+        tooltip=st.session_state.get("carto_search_label", "Lieu recherché"),
+        icon=folium.Icon(color="green", icon="map-marker", prefix="fa"),
+    ).add_to(m)
+
 
 # ---------------------------------------------------------
 # Affichage des communes (cible + voisines)

@@ -28,6 +28,37 @@ from urllib.request import Request, urlopen
 
 API_CARTO = "https://apicarto.ign.fr/api"
 GEOPLATEFORME_WMTS = "https://data.geopf.fr/wmts"
+GEOCODAGE_SEARCH = "https://data.geopf.fr/geocodage/search"
+
+
+def search_location(query: str, limit: int = 5) -> list[dict]:
+    """
+    Géocode une adresse, un lieu ou une commune via le service de
+    géocodage de la Géoplateforme (BAN / BD TOPO / PCI).
+    """
+    if not query or not query.strip():
+        return []
+
+    url = f"{GEOCODAGE_SEARCH}?{urlencode({'q': query.strip(), 'limit': limit})}"
+
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Expert-Piezometrie-Pro/1.0",
+            "Accept": "application/json",
+        },
+    )
+
+    with urlopen(request, timeout=15) as response:
+        data = json.loads(response.read().decode("utf-8"))
+
+    return data.get("features", [])
+
+
+def location_label(feature: dict) -> str:
+    """Libellé lisible d'un résultat de géocodage (nom + commune)."""
+    props = feature.get("properties", {})
+    return props.get("label") or props.get("name") or "Lieu inconnu"
 
 
 def _get_json(endpoint: str, params: dict[str, Any]) -> dict:
