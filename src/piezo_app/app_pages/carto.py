@@ -128,6 +128,23 @@ folium.TileLayer(
     attr="Esri",
 ).add_to(m)
 
+# Fonds de carte IGN (Géoplateforme)
+folium.TileLayer(
+    tiles=ign_carto.wmts_tile_url("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2"),
+    name="Plan IGN",
+    attr="IGN-F/Géoportail",
+    overlay=False,
+    control=True,
+).add_to(m)
+
+folium.TileLayer(
+    tiles=ign_carto.wmts_tile_url("ORTHOIMAGERY.ORTHOPHOTOS"),
+    name="Orthophotos IGN",
+    attr="IGN-F/Géoportail",
+    overlay=False,
+    control=True,
+).add_to(m)
+
 # ---------------------------------------------------------
 # Affichage des communes (cible + voisines)
 # ---------------------------------------------------------

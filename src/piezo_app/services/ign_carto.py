@@ -27,6 +27,7 @@ from urllib.request import Request, urlopen
 
 
 API_CARTO = "https://apicarto.ign.fr/api"
+GEOPLATEFORME_WMTS = "https://data.geopf.fr/wmts"
 
 
 def _get_json(endpoint: str, params: dict[str, Any]) -> dict:
@@ -45,6 +46,23 @@ def _get_json(endpoint: str, params: dict[str, Any]) -> dict:
 
     with urlopen(request, timeout=20) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def wmts_tile_url(layer: str, style: str = "normal") -> str:
+    """
+    Construit le gabarit d'URL WMTS (format XYZ) pour une couche de la
+    Géoplateforme, directement utilisable par folium.TileLayer.
+
+    Les couches usuelles :
+      - "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2" : plan IGN
+      - "ORTHOIMAGERY.ORTHOPHOTOS"          : orthophotos
+    """
+    return (
+        f"{GEOPLATEFORME_WMTS}?"
+        "SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+        "&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"
+        f"&LAYER={layer}&STYLE={style}&FORMAT=image/png"
+    )
 
 
 def get_commune_at_point(

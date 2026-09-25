@@ -75,6 +75,7 @@ def _is_allowed(project: dict[str, Any], user: dict[str, Any]) -> bool:
 
 
 def list_projects(user: dict[str, Any]) -> list[dict[str, Any]]:
+    """Retourne les projets accessibles à l'utilisateur courant."""
     if not user or not user.get("uid"):
         return []
 
@@ -93,7 +94,15 @@ def list_projects(user: dict[str, Any]) -> list[dict[str, Any]]:
             query = collection.where("companyId", "==", company_id)
             for doc in query.stream():
                 docs[doc.id] = doc
-    ...
+
+    projects = [_normalize_project(doc) for doc in docs.values()]
+    projects = [project for project in projects if _is_allowed(project, user)]
+
+    projects.sort(
+        key=lambda p: (p.get("projectName", "").lower(), p.get("id", ""))
+    )
+    return projects
+    
 
 
 def _purge_project_scoped_state() -> None:
@@ -134,72 +143,72 @@ def _normalize_project(doc) -> dict[str, Any]:
     }
 
 
-def _is_allowed(project: dict[str, Any], user: dict[str, Any]) -> bool:
-    """Vérifie l'accès métier à un projet.
+# def _is_allowed(project: dict[str, Any], user: dict[str, Any]) -> bool:
+#     """Vérifie l'accès métier à un projet.
 
-    - global_master : accès transverse à tous les projets ;
-    - propriétaire : accès à son propre projet ;
-    - même société + projectShare=True : accès partagé ;
-    - sinon : aucun accès.
-    """
-    if user.get("role") == "global_master":
-        return True
+#     - global_master : accès transverse à tous les projets ;
+#     - propriétaire : accès à son propre projet ;
+#     - même société + projectShare=True : accès partagé ;
+#     - sinon : aucun accès.
+#     """
+#     if user.get("role") == "global_master":
+#         return True
 
-    uid = user.get("uid")
-    company_id = user.get("company_id")
+#     uid = user.get("uid")
+#     company_id = user.get("company_id")
 
-    if uid and project.get("projectOwner") == uid:
-        return True
+#     if uid and project.get("projectOwner") == uid:
+#         return True
 
-    return bool(
-        project.get("projectShare")
-        and company_id
-        and project.get("companyId") == company_id
-    )
+#     return bool(
+#         project.get("projectShare")
+#         and company_id
+#         and project.get("companyId") == company_id
+#     )
 
 
-def list_projects(user: dict[str, Any]) -> list[dict[str, Any]]:
-    """Retourne les projets accessibles à l'utilisateur courant.
+# def list_projects(user: dict[str, Any]) -> list[dict[str, Any]]:
+#     """Retourne les projets accessibles à l'utilisateur courant.
 
-    Les requêtes sont volontairement simples (égalité sur owner/company)
-    afin d'éviter une requête OR complexe et de limiter les index requis.
-    Les résultats sont dédoublonnés puis filtrés une seconde fois côté Python.
-    """
-    if not user or not user.get("uid"):
-        return []
+#     Les requêtes sont volontairement simples (égalité sur owner/company)
+#     afin d'éviter une requête OR complexe et de limiter les index requis.
+#     Les résultats sont dédoublonnés puis filtrés une seconde fois côté Python.
+#     """
+#     if not user or not user.get("uid"):
+#         return []
 
-    collection = _db().collection(COLLECTION_NAME)
-    docs = {}
+#     collection = _db().collection(COLLECTION_NAME)
+#     docs = {}
 
-    if user.get("role") == "global_master":
-        for doc in collection.stream():
-            docs[doc.id] = doc
-    else:
-        for doc in collection.where("projectOwner", "==", user["uid"]).stream():
-            docs[doc.id] = doc
+#     if user.get("role") == "global_master":
+#         for doc in collection.stream():
+#             docs[doc.id] = doc
+#     else:
+#         for doc in collection.where("projectOwner", "==", user["uid"]).stream():
+#             docs[doc.id] = doc
 
-        company_id = user.get("company_id")
-        if company_id:
-            # Un seul filtre Firestore : pas de dépendance à un index
-            # composite pour la première version. Le partage est vérifié
-            # ensuite par _is_allowed().
-            query = collection.where("companyId", "==", company_id)
-            for doc in query.stream():
-                docs[doc.id] = doc
+#         company_id = user.get("company_id")
+#         if company_id:
+#             # Un seul filtre Firestore : pas de dépendance à un index
+#             # composite pour la première version. Le partage est vérifié
+#             # ensuite par _is_allowed().
+#             query = collection.where("companyId", "==", company_id)
+#             for doc in query.stream():
+#                 docs[doc.id] = doc
 
-    projects = [
-        _normalize_project(doc)
-        for doc in docs.values()
-    ]
-    projects = [project for project in projects if _is_allowed(project, user)]
+#     projects = [
+#         _normalize_project(doc)
+#         for doc in docs.values()
+#     ]
+#     projects = [project for project in projects if _is_allowed(project, user)]
 
-    projects.sort(
-        key=lambda p: (
-            p.get("projectName", "").lower(),
-            p.get("id", ""),
-        )
-    )
-    return projects
+#     projects.sort(
+#         key=lambda p: (
+#             p.get("projectName", "").lower(),
+#             p.get("id", ""),
+#         )
+#     )
+#     return projects
 
 
 def get_project(project_id: str, user: dict[str, Any]) -> dict[str, Any] | None:
@@ -248,7 +257,7 @@ def create_project(
             "La description ne peut pas dépasser 2000 caractères."
         )
 
-    if user.get("role") != "global_master":
+    if not permissions.has_transverse_access(user):
         company_id = user.get("company_id")
         company_name = user.get("company_name") or ""
 
