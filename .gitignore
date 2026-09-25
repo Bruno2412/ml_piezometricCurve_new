@@ -1,36 +1,34 @@
-# Environnement virtuel
+# Python / Environnements virtuels
 .venv/
 venv/
 env/
 
-# Streamlit secrets
-.streamlit/secrets.toml
-
-# Python cache
+# Python / Caches & Fichiers compilés
 __pycache__/
 *.py[cod]
+*$py.class
 
-# Tests
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Outils qualité de code
-.mypy_cache/
-.ruff_cache/
-
-# Packaging Python
+# Packaging & Build Python
 *.egg-info/
 build/
 dist/
 
-# Spyder
+# Tests & Qualité de code
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / Éditeurs
 .spyderproject
 .spyproject
 
-# Données locales / fichiers utilisateurs
+# Streamlit
+.streamlit/secrets.toml
+
+# Données locales / Fichiers temporaires
 *.xlsx
 *.xls
 *.txt
-
 *.patch

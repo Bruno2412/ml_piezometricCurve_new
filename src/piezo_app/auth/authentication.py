@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # INITIALISATION FIREBASE ADMIN
 # ============================================================================
 
-@st.cache_resource
+@st.cache_resource(ttl=600)
 def _init_firebase():
     """
     Initialise Firebase Admin une seule fois par processus Streamlit.
@@ -476,7 +476,7 @@ def invalidate_users_cache():
 # ============================================================================
 # LISTE DES UTILISATEURS
 # ============================================================================
-
+@st.cache_data(ttl=600)
 def list_users(current_user: dict):
     """
     Retourne les utilisateurs visibles par l'utilisateur courant.

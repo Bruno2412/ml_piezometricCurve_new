@@ -20,6 +20,7 @@ conformément à l'API Carto IGN.
 """
 
 import json
+import streamlit as st
 from typing import Any
 
 from urllib.parse import urlencode
@@ -30,7 +31,7 @@ API_CARTO = "https://apicarto.ign.fr/api"
 GEOPLATEFORME_WMTS = "https://data.geopf.fr/wmts"
 GEOCODAGE_SEARCH = "https://data.geopf.fr/geocodage/search"
 
-
+@st.cache_data(ttl=3600)
 def search_location(query: str, limit: int = 5) -> list[dict]:
     """
     Géocode une adresse, un lieu ou une commune via le service de
@@ -61,6 +62,7 @@ def location_label(feature: dict) -> str:
     return props.get("label") or props.get("name") or "Lieu inconnu"
 
 
+@st.cache_data(ttl=86400)
 def _get_json(endpoint: str, params: dict[str, Any]) -> dict:
     """
     Effectue une requête GET vers API Carto et retourne le JSON.
@@ -95,7 +97,7 @@ def wmts_tile_url(layer: str, style: str = "normal") -> str:
         f"&LAYER={layer}&STYLE={style}&FORMAT=image/png"
     )
 
-
+@st.cache_data(ttl=3600)
 def get_commune_at_point(
     lat: float,
     lon: float,
@@ -131,6 +133,7 @@ def get_commune_at_point(
     return features[0]
 
 
+@st.cache_data(ttl=86400)
 def get_neighboring_communes(
     commune_feature: dict,
 ) -> list[dict]:
@@ -191,6 +194,7 @@ def get_neighboring_communes(
     return neighbors
 
 
+@st.cache_data(ttl=86400)
 def get_cadastre_for_commune(
     insee_code: str,
 ) -> dict | None:

@@ -74,6 +74,7 @@ def _is_allowed(project: dict[str, Any], user: dict[str, Any]) -> bool:
     )
 
 
+@st.cache_data(ttl=300)
 def list_projects(user: dict[str, Any]) -> list[dict[str, Any]]:
     """Retourne les projets accessibles à l'utilisateur courant."""
     if not user or not user.get("uid"):
@@ -289,6 +290,12 @@ def create_project(
     }
 
     doc_ref.set(payload)
+
+    # 🧹 Invalidation du cache de list_projects
+    # Placé ici après l'écriture Firestore pour être certain que si l'écriture échoue,
+    # le cache ne soit pas vidé inutilement.
+    list_projects.clear()
+
     return _normalize_project(doc_ref.get())
 
 
