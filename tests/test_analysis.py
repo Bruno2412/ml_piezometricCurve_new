@@ -229,66 +229,89 @@ class TestRenderHappyPath:
         assert "level_aux1" in record[0]["columns"]
         assert "level_aux2" not in record[0]["columns"]
 
-
 # ─────────────────────────────────────────────────────────────────────────
-# Chemins d'erreur (doivent lever via st.stop())
+# Chemins d'erreur (affichent une erreur et retournent None)
 # ─────────────────────────────────────────────────────────────────────────
 
 
 class TestRenderErrorHandling:
-    def test_missing_target_chronicle_stops_and_reports_error(self, monkeypatch, stubbed_st):
+    def test_missing_target_chronicle_reports_error(self, monkeypatch, stubbed_st):
         chronicles = _make_chronicles(n=48, freq="MS", keys=(1, 3))  # clé 2 absente
-        with pytest.raises(StopRenderException):
-            tab_analyse.render(
-                chronicles,
-                ["PZ1", "PZ2", "PZ3"],
-                "PZ2",
-                "ETS",
-                future_years=1,
-                validation_years=1,
-                ci_pct=68,
-                n_bootstraps=5,
-            )
+
+        result = tab_analyse.render(
+            chronicles,
+            ["PZ1", "PZ2", "PZ3"],
+            "PZ2",
+            "ETS",
+            future_years=1,
+            validation_years=1,
+            ci_pct=68,
+            n_bootstraps=5,
+        )
+
+        assert result is None
         assert stubbed_st["error"]
+        assert "target_idx = 2" in stubbed_st["error"][0]
 
-    def test_zero_validation_years_stops_with_invalid_steps_error(self, monkeypatch, stubbed_st):
-        record = []
-        monkeypatch.setattr(tab_analyse, "cached_fit_predict", _fake_cached_fit_predict(record))
-        chronicles = _make_chronicles(n=48, freq="MS")
-        with pytest.raises(StopRenderException):
-            tab_analyse.render(
-                chronicles,
-                ["PZ1", "PZ2", "PZ3"],
-                "PZ1",
-                "ETS",
-                future_years=1,
-                validation_years=0,
-                ci_pct=68,
-                n_bootstraps=5,
-            )
-        assert any("invalide" in (msg or "") for msg in stubbed_st["error"])
-        assert not record  # le fit n'a jamais dû être appelé
 
-    def test_validation_period_larger_than_data_stops_with_clear_error(
+    def test_zero_validation_years_reports_invalid_steps_error(
         self, monkeypatch, stubbed_st
     ):
         record = []
-        monkeypatch.setattr(tab_analyse, "cached_fit_predict", _fake_cached_fit_predict(record))
-        chronicles = _make_chronicles(n=12, freq="MS")  # seulement 12 observations
-        with pytest.raises(StopRenderException):
-            tab_analyse.render(
-                chronicles,
-                ["PZ1", "PZ2", "PZ3"],
-                "PZ1",
-                "ETS",
-                future_years=1,
-                validation_years=5,
-                ci_pct=68,
-                n_bootstraps=5,
-            )
-        assert any("trop grande" in (msg or "") for msg in stubbed_st["error"])
-        assert not record
+        monkeypatch.setattr(
+            tab_analyse,
+            "cached_fit_predict",
+            _fake_cached_fit_predict(record),
+        )
+        chronicles = _make_chronicles(n=48, freq="MS")
 
+        result = tab_analyse.render(
+            chronicles,
+            ["PZ1", "PZ2", "PZ3"],
+            "PZ1",
+            "ETS",
+            future_years=1,
+            validation_years=0,
+            ci_pct=68,
+            n_bootstraps=5,
+        )
+
+        assert result is None
+        assert any(
+            "invalide" in (msg or "")
+            for msg in stubbed_st["error"]
+        )
+        assert not record  # le fit n'a jamais dû être appelé
+
+
+    def test_validation_period_larger_than_data_reports_clear_error(
+        self, monkeypatch, stubbed_st
+    ):
+        record = []
+        monkeypatch.setattr(
+            tab_analyse,
+            "cached_fit_predict",
+            _fake_cached_fit_predict(record),
+        )
+        chronicles = _make_chronicles(n=12, freq="MS")  # seulement 12 observations
+
+        result = tab_analyse.render(
+            chronicles,
+            ["PZ1", "PZ2", "PZ3"],
+            "PZ1",
+            "ETS",
+            future_years=1,
+            validation_years=5,
+            ci_pct=68,
+            n_bootstraps=5,
+        )
+
+        assert result is None
+        assert any(
+            "Période de validation trop grande" in (msg or "")
+            for msg in stubbed_st["error"]
+        )
+        assert not record  # le fit n'a jamais dû être appelé
 
 # ─────────────────────────────────────────────────────────────────────────
 # Test d'intégration léger (sans mock de cached_fit_predict)

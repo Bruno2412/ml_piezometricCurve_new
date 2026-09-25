@@ -212,7 +212,7 @@ class TestAuthenticate:
             "role": "company_master",
             "company_id": "acme",
             "company_name": "ACME Corp",
-            "pages": None,
+            "pages": {},
             "id_token": "fake-id-token",
             "refresh_token": "fake-refresh-token",
             "expires_in": "3600",
@@ -313,7 +313,11 @@ class TestCreateUser:
 
         mocked_set_claims.assert_called_once_with(
             "new-uid",
-            {"role": "user", "company_id": "acme", "company_name": "ACME Corp"},
+            {"role": "user", 
+             "company_id": "acme", 
+             "company_name": "ACME Corp"
+            },
+            app=authentication._firebase_app,
         )
 
     def test_company_master_creates_user_for_its_own_company(self):
@@ -339,7 +343,11 @@ class TestCreateUser:
 
         mocked_set_claims.assert_called_once_with(
             "new-uid",
-            {"role": "user", "company_id": "acme", "company_name": "ACME Corp"},
+            {"role": "user", 
+             "company_id": "acme", 
+             "company_name": "ACME Corp"
+            },
+            app=authentication._firebase_app,
         )
 
 
@@ -499,8 +507,14 @@ class TestSetUserPages:
             {
                 "role": "user",
                 "company_id": "acme",
-                "pages": {"chroniques": True, "analyse": True, "carte": False, "twin": False},
+                "pages": {
+                    "chroniques": True,
+                    "analyse": True,
+                    "carte": False,
+                    "twin": False,
+                },
             },
+            app=authentication._firebase_app,
         )
 
     def test_company_master_cannot_set_pages_for_another_company(self):

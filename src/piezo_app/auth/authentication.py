@@ -476,7 +476,6 @@ def invalidate_users_cache():
 # ============================================================================
 # LISTE DES UTILISATEURS
 # ============================================================================
-@st.cache_data(ttl=600)
 def list_users(current_user: dict):
     """
     Retourne les utilisateurs visibles par l'utilisateur courant.
