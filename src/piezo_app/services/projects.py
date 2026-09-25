@@ -23,6 +23,38 @@ from piezo_app.auth import authentication
 
 COLLECTION_NAME = "Projects"
 
+# Clés alimentées par les pages métier (widgets Streamlit + données
+# dérivées) : elles ne doivent jamais survivre à un changement de projet,
+# sous peine d'afficher les données ou paramètres d'un autre projet sous
+# le nom du projet nouvellement ouvert.
+_PROJECT_SCOPED_KEYS = (
+    "data_ready",
+    "shared_map_data",
+    "analysis_raw",
+    "upl_files",
+    "model_name",
+    "future_years",
+    "validation_years",
+    "ci_pct",
+    "n_bootstraps",
+    "thickness",
+    "Q",
+    "S",
+    "Area",
+    "distance",
+    "K",
+    "selection",
+    "target_name",
+    "share_with_cartography",
+    "parsed_chroniques",
+)
+
+
+def _purge_project_scoped_state() -> None:
+    """Retire du session_state tout ce qui appartient au projet quitté."""
+    for key in _PROJECT_SCOPED_KEYS:
+        st.session_state.pop(key, None)
+
 
 class ProjectNotFoundError(Exception):
     """Projet inexistant ou inaccessible pour l'utilisateur courant."""
@@ -211,6 +243,12 @@ def set_current_project(project_id: str, user: dict[str, Any]) -> dict[str, Any]
     if project is None:
         raise ProjectNotFoundError("Projet inexistant ou accès refusé.")
 
+    if st.session_state.get("current_project_id") != project["id"]:
+        # Vrai changement de projet (pas un simple rafraîchissement du
+        # projet déjà ouvert) : tout ce qui a été chargé/saisi pour l'ancien
+        # projet devient invalide et ne doit pas fuiter vers le nouveau.
+        _purge_project_scoped_state()
+
     st.session_state["current_project_id"] = project["id"]
     st.session_state["current_project"] = project
     return project
@@ -220,8 +258,7 @@ def clear_current_project() -> None:
     """Ferme le projet courant sans toucher aux données Firestore."""
     st.session_state.pop("current_project_id", None)
     st.session_state.pop("current_project", None)
-    st.session_state.pop("data_ready", None)
-    st.session_state.pop("shared_map_data", None)
+    _purge_project_scoped_state()
 
 
 def current_project(user: dict[str, Any]) -> dict[str, Any] | None:

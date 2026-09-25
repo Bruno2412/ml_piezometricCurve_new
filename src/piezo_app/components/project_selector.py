@@ -36,15 +36,29 @@ def render() -> None:
     }
 
     current_id = current["id"] if current else None
+    default_id = current_id if current_id in ids else None
+
+    # Une fois créé, ce selectbox conserve sa propre valeur dans
+    # session_state indépendamment du paramètre `index=` : sans cette
+    # resynchronisation explicite AVANT de créer le widget, un changement
+    # de projet fait ailleurs (page « Mes projets », création d'un
+    # projet, fermeture...) serait écrasé au tour suivant par la valeur
+    # mémorisée du selectbox, qui reviendrait alors sur l'ancien projet —
+    # c'est exactement ce qui rendait « Ouvrir »/« Fermer le projet »
+    # inopérants.
+    if st.session_state.get("current_project_selector") != default_id:
+        st.session_state["current_project_selector"] = default_id
+
     selected = st.sidebar.selectbox(
         "Projet",
         options=ids,
         format_func=lambda project_id: labels[project_id],
-        index=ids.index(current_id) if current_id in ids else 0,
+        index=None,
+        placeholder="Aucun projet ouvert",
         key="current_project_selector",
     )
 
-    if selected != current_id:
+    if selected is not None and selected != current_id:
         projects.set_current_project(selected, user)
         st.rerun()
 

@@ -17,6 +17,7 @@ import streamlit as st
 try:
     from piezo_app.services import piezo_core as core
     from piezo_app.services import projects
+    from piezo_app.services import project_files
     from piezo_app.auth import permissions
     from piezo_app.components import (
         tab_analyse,
@@ -132,134 +133,137 @@ with tab_by_key["parametres"]:
     distance = st.number_input("Distance piézo/ouvrage (m)", value=50.0, key="distance")
     K = st.number_input("Perméabilité K (m/s)", value=0.0001, format="%.6f", key="K")
 
-# ── Extraction des fichiers uploadés ──────────────────────────────────
-excel_file, chroniques_file, descriptif_file, masses_eau_file = None, None, None, None
-for f in uploaded_files or []:
-    fname = f.name.strip().lower()
-    if fname.endswith((".xlsx", ".xls")):
-        excel_file = f
-    elif fname == "chroniques.txt":
-        chroniques_file = f
-    elif fname == "descriptif.txt":
-        descriptif_file = f
-    elif fname == "masseseau.txt":
-        masses_eau_file = f
+# ── Détermination des fichiers à traiter ──────────────────────────────
+# Priorité : 1) un nouvel upload (remplace tout, y compris ce qui est déjà
+# enregistré pour ce projet) ; 2) le cache de cette session (pas de
+# re-parsing ni d'aller-retour Firestore à chaque interaction) ; 3) les
+# fichiers déjà enregistrés pour ce projet dans Firestore — ce qui permet
+# de les retrouver après un F5, une nouvelle session ou un redémarrage de
+# l'appli (voir project_files.py ; ce stockage est purgé/remplacé par
+# set_current_project() lors d'un changement RÉEL de projet).
+project_id = current_project["id"]
+new_upload = bool(uploaded_files)
+files_from_storage = False
+
+if not new_upload and "parsed_chroniques" not in st.session_state:
+    stored = project_files.load_stored_files(project_id)
+    if stored:
+        uploaded_files = list(stored.values())
+        files_from_storage = True
+        with tab_by_key["parametres"]:
+            st.caption("📁 Fichiers du projet rechargés automatiquement.")
 
 ok = False  # devient True seulement si tout le pipeline réussit
+source_df, points, has_masse, coords_dict = None, [], False, {}
 
-# ── Traitement principal si des chroniques sont chargées ─────────────────
-if chroniques_file is not None or excel_file is not None:
-    uploaded_chroniques = chroniques_file if chroniques_file is not None else excel_file
+if new_upload or files_from_storage:
+    excel_file, chroniques_file, descriptif_file, masses_eau_file = None, None, None, None
+    for f in uploaded_files or []:
+        fname = f.name.strip().lower()
+        if fname.endswith((".xlsx", ".xls")):
+            excel_file = f
+        elif fname == "chroniques.txt":
+            chroniques_file = f
+        elif fname == "descriptif.txt":
+            descriptif_file = f
+        elif fname == "masseseau.txt":
+            masses_eau_file = f
 
-    try:
-        df_raw, _file_name = load_chroniques_auto(uploaded_chroniques)
-    except Exception as e:
-        with tab_by_key["parametres"]:
-            st.error(f"Erreur lors de la lecture des chroniques : {e}")
-        df_raw = None
+    if chroniques_file is not None or excel_file is not None:
+        uploaded_chroniques = chroniques_file if chroniques_file is not None else excel_file
 
-    if df_raw is not None:
-        coords_dict = {}
-        if descriptif_file is not None:
-            try:
-                coords_dict = load_descriptif(descriptif_file.getvalue())
-                with tab_by_key["parametres"]:
-                    st.success(f"✓ Descriptif chargé ({len(coords_dict)} points)")
-            except Exception as e:
-                with tab_by_key["parametres"]:
-                    st.error(f"Erreur lecture descriptif : {e}")
-        else:
-            with tab_by_key["parametres"]:
-                st.info("Pas de descriptif.txt fourni — la carte sera limitée.")
-
-        masses_eau_dict = {}
-        if masses_eau_file is not None:
-            try:
-                masses_eau_dict = load_masses_eau(masses_eau_file.getvalue())
-                with tab_by_key["parametres"]:
-                    st.success(f"✓ MassesEau.txt chargé ({len(masses_eau_dict)} points)")
-            except Exception as e:
-                with tab_by_key["parametres"]:
-                    st.warning(f"Impossible de lire MassesEau.txt : {e}")
-
-        if masses_eau_dict:
-            for bss_id, label in masses_eau_dict.items():
-                if bss_id in coords_dict:
-                    coords_dict[bss_id]["masse_eau"] = label
-
-        # Parsing des chroniques
         try:
-            source_df, points, has_masse = core.parse_multi_piezo_excel(df_raw)
-            if masses_eau_dict:
-                source_df["masse_eau"] = (
-                    source_df["point"].map(masses_eau_dict).fillna(source_df["masse_eau"])
-                )
-                has_masse = source_df["masse_eau"].str.len().gt(0).any()
-            with tab_by_key["parametres"]:
-                st.success(
-                    f"✓ {len(points)} points détectés"
-                    + ("" if has_masse else " (⚠ pas de masse d'eau)")
-                )
+            df_raw, _file_name = load_chroniques_auto(uploaded_chroniques)
         except Exception as e:
             with tab_by_key["parametres"]:
-                st.error(f"Erreur parsing : {e}")
-            points = []
-            has_masse = False
+                st.error(f"Erreur lors de la lecture des chroniques : {e}")
+            df_raw = None
 
-        # Sélection des points
-        if points:
-            with tab_by_key["parametres"]:
-                selection = st.multiselect(
-                    "Points piézométriques (3 points)",
-                    options=points,
-                    default=points[: min(3, len(points))],
-                    max_selections=3,
-                    key="selection",
-                )
-                if len(selection) < 3:
-                    st.warning(
-                        f"Veuillez sélectionner 3 points "
-                        f"({len(selection)} actuellement sélectionné(s))."
-                    )
-
-            if len(selection) >= 3:
-                with tab_by_key["parametres"]:
-                    target_name = st.selectbox(
-                        "Piézomètre à prévoir", selection, key="target_name"
-                    )
-
-                chronicles = {}
-                ok = True
-                for i, name in enumerate(selection, start=1):
-                    sub = source_df.loc[
-                        source_df["point"] == name, ["date", "level"]
-                    ].reset_index(drop=True)
-                    if len(sub) < 24:
-                        with tab_by_key["parametres"]:
-                            st.error(f"Point « {name} » : {len(sub)} obs. (min 24).")
-                        ok = False
-                        break
-                    masse_vals = source_df.loc[source_df["point"] == name, "masse_eau"]
-                    chronicles[i] = {
-                        "df": sub,
-                        "name": name,
-                        "masse_eau": masse_vals.iloc[0] if len(masse_vals) else "",
-                    }
-
-                if ok:
+        if df_raw is not None:
+            coords_dict = {}
+            if descriptif_file is not None:
+                try:
+                    coords_dict = load_descriptif(descriptif_file.getvalue())
                     with tab_by_key["parametres"]:
-                        if has_masse:
-                            masses = {c["masse_eau"].strip().lower() for c in chronicles.values()}
-                            if len(masses) > 1:
-                                st.error("Points issus de masses d'eau différentes.")
-                                ok = False
-                            else:
-                                st.success(
-                                    f"✓ Même masse d'eau : "
-                                    f"{list(chronicles.values())[0]['masse_eau']}"
-                                )
-                        else:
-                            st.warning("Masse d'eau non renseignée — à vérifier")
+                        st.success(f"✓ Descriptif chargé ({len(coords_dict)} points)")
+                except Exception as e:
+                    with tab_by_key["parametres"]:
+                        st.error(f"Erreur lecture descriptif : {e}")
+            else:
+                with tab_by_key["parametres"]:
+                    st.info("Pas de descriptif.txt fourni — la carte sera limitée.")
+
+            masses_eau_dict = {}
+            if masses_eau_file is not None:
+                try:
+                    masses_eau_dict = load_masses_eau(masses_eau_file.getvalue())
+                    with tab_by_key["parametres"]:
+                        st.success(f"✓ MassesEau.txt chargé ({len(masses_eau_dict)} points)")
+                except Exception as e:
+                    with tab_by_key["parametres"]:
+                        st.warning(f"Impossible de lire MassesEau.txt : {e}")
+
+            if masses_eau_dict:
+                for bss_id, label in masses_eau_dict.items():
+                    if bss_id in coords_dict:
+                        coords_dict[bss_id]["masse_eau"] = label
+
+            try:
+                source_df, points, has_masse = core.parse_multi_piezo_excel(df_raw)
+                if masses_eau_dict:
+                    source_df["masse_eau"] = (
+                        source_df["point"].map(masses_eau_dict).fillna(source_df["masse_eau"])
+                    )
+                    has_masse = source_df["masse_eau"].str.len().gt(0).any()
+                with tab_by_key["parametres"]:
+                    st.success(
+                        f"✓ {len(points)} points détectés"
+                        + ("" if has_masse else " (⚠ pas de masse d'eau)")
+                    )
+
+                # Snapshot mis en cache pour survivre à un changement de page.
+                st.session_state["parsed_chroniques"] = {
+                    "source_df": source_df,
+                    "points": points,
+                    "has_masse": has_masse,
+                    "coords_dict": coords_dict,
+                }
+
+                # Persistance pour la prochaine ouverture du projet — inutile
+                # de réécrire ce qu'on vient tout juste de relire depuis
+                # Firestore.
+                if new_upload:
+                    try:
+                        project_files.save_uploaded_files(project_id, uploaded_files)
+                    except Exception as e:
+                        with tab_by_key["parametres"]:
+                            st.warning(
+                                "Analyse effectuée, mais échec de "
+                                "l'enregistrement pour la prochaine ouverture "
+                                f"du projet : {e}"
+                            )
+            except Exception as e:
+                with tab_by_key["parametres"]:
+                    st.error(f"Erreur parsing : {e}")
+                source_df, points, has_masse = None, [], False
+                st.session_state.pop("parsed_chroniques", None)
+
+    elif files_from_storage:
+        with tab_by_key["parametres"]:
+            st.warning(
+                "Les fichiers enregistrés pour ce projet ne contiennent "
+                "aucune chronique exploitable."
+            )
+
+elif "parsed_chroniques" in st.session_state:
+    cached = st.session_state["parsed_chroniques"]
+    source_df = cached["source_df"]
+    points = cached["points"]
+    has_masse = cached["has_masse"]
+    coords_dict = cached["coords_dict"]
+    with tab_by_key["parametres"]:
+        st.caption("📌 Fichiers déjà chargés dans cette session — toujours actifs.")
+
 else:
     with tab_by_key["parametres"]:
         st.info(
@@ -267,6 +271,61 @@ else:
             "MassesEau.txt si disponibles) pour démarrer "
             "l'analyse — ou un Excel de chroniques déjà préparé."
         )
+
+# Sélection des points
+if points:
+    with tab_by_key["parametres"]:
+        selection = st.multiselect(
+            "Points piézométriques (3 points)",
+            options=points,
+            default=points[: min(3, len(points))],
+            max_selections=3,
+            key="selection",
+        )
+        if len(selection) < 3:
+            st.warning(
+                f"Veuillez sélectionner 3 points "
+                f"({len(selection)} actuellement sélectionné(s))."
+            )
+
+    if len(selection) >= 3:
+        with tab_by_key["parametres"]:
+            target_name = st.selectbox(
+                "Piézomètre à prévoir", selection, key="target_name"
+            )
+
+        chronicles = {}
+        ok = True
+        for i, name in enumerate(selection, start=1):
+            sub = source_df.loc[
+                source_df["point"] == name, ["date", "level"]
+            ].reset_index(drop=True)
+            if len(sub) < 24:
+                with tab_by_key["parametres"]:
+                    st.error(f"Point « {name} » : {len(sub)} obs. (min 24).")
+                ok = False
+                break
+            masse_vals = source_df.loc[source_df["point"] == name, "masse_eau"]
+            chronicles[i] = {
+                "df": sub,
+                "name": name,
+                "masse_eau": masse_vals.iloc[0] if len(masse_vals) else "",
+            }
+
+        if ok:
+            with tab_by_key["parametres"]:
+                if has_masse:
+                    masses = {c["masse_eau"].strip().lower() for c in chronicles.values()}
+                    if len(masses) > 1:
+                        st.error("Points issus de masses d'eau différentes.")
+                        ok = False
+                    else:
+                        st.success(
+                            f"✓ Même masse d'eau : "
+                            f"{list(chronicles.values())[0]['masse_eau']}"
+                        )
+                else:
+                    st.warning("Masse d'eau non renseignée — à vérifier")
 
 # ---------------------------------------------------------
 # Mise à jour de l'état "données prêtes" — si l'état change par
