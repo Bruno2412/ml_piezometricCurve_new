@@ -19,7 +19,8 @@ from typing import Any
 import streamlit as st
 from firebase_admin import firestore
 
-from piezo_app.auth import authentication 
+from piezo_app.auth import authentication
+from piezo_app.auth import permissions  # ajout
 
 COLLECTION_NAME = "Projects"
 
@@ -48,6 +49,51 @@ _PROJECT_SCOPED_KEYS = (
     "share_with_cartography",
     "parsed_chroniques",
 )
+
+def _is_allowed(project: dict[str, Any], user: dict[str, Any]) -> bool:
+    """Vérifie l'accès métier à un projet.
+
+    - super_master / global_master : accès transverse à tous les projets ;
+    - propriétaire : accès à son propre projet ;
+    - même société + projectShare=True : accès partagé ;
+    - sinon : aucun accès.
+    """
+    if permissions.has_transverse_access(user):
+        return True
+
+    uid = user.get("uid")
+    company_id = user.get("company_id")
+
+    if uid and project.get("projectOwner") == uid:
+        return True
+
+    return bool(
+        project.get("projectShare")
+        and company_id
+        and project.get("companyId") == company_id
+    )
+
+
+def list_projects(user: dict[str, Any]) -> list[dict[str, Any]]:
+    if not user or not user.get("uid"):
+        return []
+
+    collection = _db().collection(COLLECTION_NAME)
+    docs = {}
+
+    if permissions.has_transverse_access(user):
+        for doc in collection.stream():
+            docs[doc.id] = doc
+    else:
+        for doc in collection.where("projectOwner", "==", user["uid"]).stream():
+            docs[doc.id] = doc
+
+        company_id = user.get("company_id")
+        if company_id:
+            query = collection.where("companyId", "==", company_id)
+            for doc in query.stream():
+                docs[doc.id] = doc
+    ...
 
 
 def _purge_project_scoped_state() -> None:

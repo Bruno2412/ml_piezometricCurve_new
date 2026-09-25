@@ -71,10 +71,6 @@ def can_administer_users(user: dict) -> bool:
     return user.get("role") in ADMIN_ROLES
 
 
-# def can_switch_company(user: dict) -> bool:
-#     """Seul un global_master peut changer de société à la volée
-#     (voir components/project_selector.py)."""
-#     return is_global_master(user)
 def can_switch_company(user: dict) -> bool:
     """Un global_master ou un super_master peuvent changer de société à la volée."""
     return user.get("role") in (SUPER_MASTER, GLOBAL_MASTER)
@@ -89,11 +85,6 @@ def require_role(user: dict, allowed_roles: tuple):
         )
 
 
-# def can_assign_company_master(current_user: dict) -> bool:
-#     """
-#     Seul un global_master peut attribuer le rôle company_master.
-#     """
-#     return current_user.get("role") == GLOBAL_MASTER
 def can_assign_company_master(current_user: dict) -> bool:
     """Un global_master ou un super_master peuvent attribuer le rôle company_master."""
     return current_user.get("role") in (SUPER_MASTER, GLOBAL_MASTER)
@@ -119,37 +110,6 @@ def can_change_role(actor: dict, target: dict, new_role: str) -> bool:
     return can_create_user_for(actor, new_role, target.get("company_id"))
 
 
-
-
-# def can_create_user_for(actor: dict, target_role: str, target_company_id: str | None) -> bool:
-#     """Décide si `actor` a le droit de créer un compte de rôle et de
-#     société donnés. Reprend la colonne "Créer user" / "Créer company
-#     master" de la matrice de droits :
-#       - un global_master peut créer un company_master ou un user, pour
-#         n'importe quelle société ;
-#       - un company_master ne peut créer qu'un user, et uniquement dans
-#         SA propre société ;
-#       - personne ne peut créer de global_master depuis cette fonction
-#         (compte réservé, création hors admin).
-
-#     À appeler à la fois côté UI (pour construire le formulaire) et côté
-#     auth.authentication.create_user (pour ne pas dépendre uniquement de
-#     ce que l'UI a bien voulu afficher — voir list_users() qui applique
-#     déjà ce principe pour la lecture)."""
-#     if target_role == GLOBAL_MASTER:
-#         return False
-
-#     if is_global_master(actor):
-#         return target_role in (COMPANY_MASTER, USER)
-
-#     if is_company_master(actor):
-#         return (
-#             target_role == USER
-#             and target_company_id is not None
-#             and target_company_id == actor.get("company_id")
-#         )
-
-#     return False
 def can_create_user_for(actor: dict, target_role: str, target_company_id: str | None) -> bool:
     if is_super_master(actor):
         # Droits totaux : peut créer n'importe quel rôle, pour n'importe quelle société.
@@ -173,27 +133,6 @@ def can_create_user_for(actor: dict, target_role: str, target_company_id: str | 
     return False
 
 
-# def can_modify_target(actor: dict, target: dict) -> bool:
-#     """Décide si `actor` a le droit d'agir sur CE compte précis
-#     (désactiver/réactiver, éditer, modifier ses permissions de pages).
-#     Centralise les garde-fous anti-escalade qui ne peuvent pas être
-#     déduits du rôle de l'acteur seul :
-#       - un compte ne peut pas être modifié par son propre titulaire par
-#         ce chemin (pas d'auto-désactivation depuis l'admin) ;
-#       - un global_master ne peut être modifié par personne, pas même un
-#         autre global_master ;
-#       - un company_master reste cantonné aux comptes de sa société.
-
-#     `target` doit contenir au moins {"uid", "role", "company_id"}."""
-#     if not can_administer_users(actor):
-#         return False
-#     if target.get("uid") == actor.get("uid"):
-#         return False
-#     if target.get("role") == GLOBAL_MASTER:
-#         return False
-#     if is_company_master(actor) and target.get("company_id") != actor.get("company_id"):
-#         return False
-#     return True
 def can_modify_target(actor: dict, target: dict) -> bool:
     if not can_administer_users(actor):
         return False
@@ -244,24 +183,6 @@ def normalize_pages(pages) -> dict:
     return result
 
 
-# def allowed_pages(user: dict) -> set:
-#     """
-#     Retourne les pages auxquelles l'utilisateur a accès.
-
-#     Règles :
-#     - un global_master possède toujours tous les accès ;
-#     - pour les autres rôles, l'absence de claim 'pages' signifie
-#       aucun accès ;
-#     - l'absence d'une clé dans 'pages' signifie aucun accès à cette page
-#       (un compte enregistré avant l'ajout d'un onglet ne le voit donc
-#       qu'après une nouvelle sauvegarde de ses droits par l'admin) ;
-#     - "twin" et "interpretation" nécessitent obligatoirement "analyse".
-#     """
-#     if is_global_master(user):
-#         return set(PAGE_KEYS)
-
-#     normalized = normalize_pages(user.get("pages"))
-#     return {key for key, granted in normalized.items() if granted}
 def allowed_pages(user: dict) -> set:
     if is_super_master(user) or is_global_master(user):
         return set(PAGE_KEYS)
@@ -269,23 +190,11 @@ def allowed_pages(user: dict) -> set:
     normalized = normalize_pages(user.get("pages"))
     return {key for key, granted in normalized.items() if granted}
 
-# def assignable_pages(actor: dict) -> set:
-#     """
-#     Pages qu'un acteur a le droit d'accorder à un compte qu'il
-#     administre (via set_user_pages).
 
-#     Principe : on ne peut pas déléguer plus de droits qu'on n'en
-#     possède soi-même.
-#       - un global_master peut accorder n'importe quelle page à
-#         n'importe qui ;
-#       - un company_master ne peut accorder que les pages auxquelles
-#         IL a lui-même accès (voir allowed_pages) — il peut ainsi
-#         gérer les onglets de ses users, mais seulement dans la limite
-#         de ses propres droits.
-#     """
-#     if is_global_master(actor):
-#         return set(PAGE_KEYS)
-#     return allowed_pages(actor)
+def has_transverse_access(user: dict) -> bool:
+    """True si l'utilisateur voit/gère les données de toutes les sociétés
+    sans restriction (super_master, global_master)."""
+    return user.get("role") in (SUPER_MASTER, GLOBAL_MASTER)
 
 def assignable_pages(actor: dict) -> set:
     if is_super_master(actor) or is_global_master(actor):
@@ -298,11 +207,21 @@ def assignable_pages(actor: dict) -> set:
 
 def effective_company_id(user: dict, viewing_company_id: str | None) -> str | None:
     """Détermine la société dont les données doivent être affichées :
-    - global_master : celle qu'il a choisie via le sélecteur
-      (viewing_company_id), ou None s'il n'a encore rien choisi
-      (vue globale / à définir selon le besoin de l'app).
+    - super_master / global_master : celle qu'il a choisie via le
+      sélecteur (viewing_company_id), ou None s'il n'a encore rien
+      choisi (vue globale / à définir selon le besoin de l'app).
     - company_master / user : toujours la leur, le sélecteur ne
       s'applique pas à eux (viewing_company_id est ignoré)."""
-    if is_global_master(user):
+    if is_super_master(user) or is_global_master(user):
         return viewing_company_id
     return user.get("company_id")
+# def effective_company_id(user: dict, viewing_company_id: str | None) -> str | None:
+#     """Détermine la société dont les données doivent être affichées :
+#     - global_master : celle qu'il a choisie via le sélecteur
+#       (viewing_company_id), ou None s'il n'a encore rien choisi
+#       (vue globale / à définir selon le besoin de l'app).
+#     - company_master / user : toujours la leur, le sélecteur ne
+#       s'applique pas à eux (viewing_company_id est ignoré)."""
+#     if is_global_master(user):
+#         return viewing_company_id
+#     return user.get("company_id")
