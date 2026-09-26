@@ -425,8 +425,14 @@ class TestListUsers:
         assert result[0]["company_id"] == "acme"
 
     def test_skips_users_without_role_claim(self):
+        authentication._fetch_all_users_raw.clear()
+        authentication.list_users.clear()
+        
         users = [
-            SimpleNamespace(uid="1", email="pending@acme.com", disabled=False, custom_claims=None),
+            SimpleNamespace(uid="1", 
+                            email="pending@acme.com", 
+                            disabled=False, 
+                            custom_claims=None),
         ]
         with mock.patch.object(
             authentication.fb_auth,
@@ -448,20 +454,26 @@ class TestSetUserActive:
         target = {"uid": "uid-1", "role": "user", "company_id": "acme"}
         with mock.patch.object(authentication.fb_auth, "update_user") as mocked:
             authentication.set_user_active(_global_master(), target, is_active=False)
-        mocked.assert_called_once_with("uid-1", disabled=True)
+        mocked.assert_called_once_with("uid-1", 
+                                       disabled=True, 
+                                       app=authentication._firebase_app,)
 
     def test_global_master_reactivates_a_user(self):
         target = {"uid": "uid-1", "role": "user", "company_id": "acme"}
         with mock.patch.object(authentication.fb_auth, "update_user") as mocked:
             authentication.set_user_active(_global_master(), target, is_active=True)
-        mocked.assert_called_once_with("uid-1", disabled=False)
+        mocked.assert_called_once_with("uid-1", 
+                                       disabled=False,
+                                       app=authentication._firebase_app,)
 
     def test_company_master_deactivates_user_of_its_own_company(self):
         actor = _company_master(company_id="acme")
         target = {"uid": "uid-1", "role": "user", "company_id": "acme"}
         with mock.patch.object(authentication.fb_auth, "update_user") as mocked:
             authentication.set_user_active(actor, target, is_active=False)
-        mocked.assert_called_once_with("uid-1", disabled=True)
+        mocked.assert_called_once_with("uid-1", 
+                                       disabled=True,
+                                       app=authentication._firebase_app,)
 
     def test_company_master_cannot_deactivate_user_of_another_company(self):
         actor = _company_master(company_id="acme")
@@ -519,6 +531,7 @@ class TestSetUserPages:
                     "analyse": True,
                     "carte": False,
                     "twin": False,
+                    "interpretation": False,
                 },
             },
             app=authentication._firebase_app,
