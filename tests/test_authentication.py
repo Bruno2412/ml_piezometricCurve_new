@@ -426,7 +426,7 @@ class TestListUsers:
 
     def test_skips_users_without_role_claim(self):
         authentication._fetch_all_users_raw.clear()
-        authentication.list_users.clear()
+        # authentication.list_users.clear()
         
         users = [
             SimpleNamespace(uid="1", 
