@@ -68,6 +68,13 @@ class TestRenderProtectsAccounts:
             mock.patch.object(
                 tab_global_overview.authentication, "set_user_active"
             ) as mocked_toggle,
+            mock.patch.object(
+                tab_global_overview.authentication, "set_user_role"
+                ),
+                mock.patch.object(
+                    tab_global_overview.authentication, "set_user_pages"
+                ),
+            
             mock.patch("streamlit.button", return_value=True),
             mock.patch(
                 "streamlit.columns",
@@ -75,7 +82,12 @@ class TestRenderProtectsAccounts:
                     st for _ in (range(spec) if isinstance(spec, int) else spec)
                 ],
             ),
-            mock.patch("streamlit.selectbox", side_effect=lambda label, options: options[0]),
+            mock.patch(
+                "streamlit.selectbox",
+                side_effect=lambda label, options=None, **kwargs: (
+                    options[0] if options else kwargs.get("options", [None])[0]
+                ),
+            ),
             mock.patch("streamlit.metric"),
             mock.patch("streamlit.dataframe"),
             mock.patch("streamlit.rerun"),

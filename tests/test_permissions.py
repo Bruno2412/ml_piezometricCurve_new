@@ -188,9 +188,9 @@ class TestEffectiveCompanyId:
 
 
 class TestAllowedPages:
-    def test_no_pages_claim_means_everything_allowed(self):
+    def test_no_pages_claim_means_no_access(self):
         user = _user(permissions.USER, company_id="acme")
-        assert permissions.allowed_pages(user) == set(permissions.PAGE_KEYS)
+        assert permissions.allowed_pages(user) == set()
 
     def test_only_explicitly_checked_pages_are_allowed(self):
         user = _user(permissions.USER, company_id="acme") | {

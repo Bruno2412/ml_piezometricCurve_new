@@ -22,6 +22,8 @@ from piezo_app.auth import authentication
 
 class TestInitFirebase:
     def test_initializes_app_when_not_already_initialized(self):
+        authentication._init_firebase.clear()
+        
         with (
             mock.patch.object(authentication.firebase_admin, "_apps", {}),
             mock.patch.object(authentication.credentials, "Certificate") as mock_cert,
@@ -32,6 +34,8 @@ class TestInitFirebase:
             mock_init.assert_called_once()
 
     def test_uses_service_account_from_streamlit_secrets(self):
+        authentication._init_firebase.clear()
+        
         with (
             mock.patch.object(authentication.firebase_admin, "_apps", {}),
             mock.patch.object(authentication.credentials, "Certificate") as mock_cert,

@@ -42,7 +42,7 @@ def test_list_projects_owner_and_shared_are_deduplicated():
         FakeDoc(
             "p1",
             {
-                "projectName": "Projet privé",
+                "projectName": "Projet A",
                 "projectOwner": "u1",
                 "projectShare": False,
                 "companyId": "c1",
@@ -51,7 +51,7 @@ def test_list_projects_owner_and_shared_are_deduplicated():
         FakeDoc(
             "p2",
             {
-                "projectName": "Projet partagé",
+                "projectName": "Projet B",
                 "projectOwner": "u2",
                 "projectShare": True,
                 "companyId": "c1",
